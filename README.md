@@ -18,32 +18,65 @@ Googleシートから発注情報を読み込み、イーウーパスポート�
 
 ## セットアップ
 
-### 1. リポジトリのクローン
+### 1. Python本体のインストール
+
+このプロジェクトにはPython 3.8以上が必要です。
+
+#### Pythonがインストールされているか確認
+
+ターミナル（コマンドプロンプト）を開いて以下のコマンドを実行：
 
 ```bash
-git clone https://github.com/asi1007/auto-order.git
-cd auto-order
+python3 --version
+# または
+python --version
 ```
 
-### 2. Python仮想環境の作成（推奨）
+`Python 3.8.x` 以上のバージョンが表示されればインストール済みです。次のステップに進んでください。
 
-仮想環境を使用することで、プロジェクトごとに依存パッケージを分離できます。
+#### Pythonのインストール方法
+
+**macOS の場合:**
+
+1. **Homebrewを使う方法（推奨）**
+   ```bash
+   # Homebrewがインストールされていない場合
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   
+   # Pythonをインストール
+   brew install python3
+   ```
+
+2. **公式インストーラーを使う方法**
+   - [Python公式サイト](https://www.python.org/downloads/)にアクセス
+   - 「Download Python 3.x.x」ボタンをクリック
+   - ダウンロードした`.pkg`ファイルを開いてインストール
+
+**Windows の場合:**
+
+1. [Python公式サイト](https://www.python.org/downloads/)にアクセス
+2. 「Download Python 3.x.x」ボタンをクリック
+3. ダウンロードした`.exe`ファイルを実行
+4. **重要**: インストール時に「Add Python to PATH」にチェックを入れる
+5. 「Install Now」をクリック
+
+**Linux (Ubuntu/Debian) の場合:**
 
 ```bash
-# 仮想環境を作成
-python3 -m venv venv
-
-# 仮想環境をアクティベート
-# macOS/Linux の場合:
-source venv/bin/activate
-
-# Windows の場合:
-venv\Scripts\activate
+sudo apt update
+sudo apt install python3 python3-pip python3-venv
 ```
 
-仮想環境がアクティブになると、プロンプトの先頭に `(venv)` が表示されます。
+**インストール確認:**
 
-### 3. 必要なPythonパッケージのインストール
+```bash
+python3 --version
+pip3 --version
+```
+
+両方のコマンドでバージョンが表示されれば成功です。
+
+### 2. 必要なPythonパッケージのインストール
 
 ```bash
 # requirements.txtから依存パッケージをインストール
@@ -58,7 +91,7 @@ pip install -r requirements.txt
 - `pandas` - データ処理
 - `pytest` / `pytest-mock` - テストフレームワーク
 
-### 4. Playwrightブラウザのインストール
+### 3. Playwrightブラウザのインストール
 
 ```bash
 # Chromiumブラウザをインストール
@@ -67,7 +100,7 @@ playwright install chromium
 
 このコマンドは、Playwrightが使用するChromiumブラウザをダウンロードします。
 
-### 5. Google Sheets API認証の設定
+### 4. Google Sheets API認証の設定
 
 1. [Google Cloud Console](https://console.cloud.google.com/) にアクセス
 2. プロジェクトを作成または選択
@@ -77,7 +110,7 @@ playwright install chromium
 6. ダウンロードしたJSONファイルを `credentials.json` として保存
 7. Googleシートでサービスアカウントのメールアドレスに閲覧権限を付与
 
-### 6. 環境変数の設定
+### 5. 環境変数の設定
 
 `.env.example` を `.env` にコピーして編集：
 
