@@ -51,6 +51,29 @@ cp .env.example .env
 - `YIWUPASSPORT_PASSWORD`: イーウーパスポートのログインパスワード
 - `HEADLESS`: ブラウザを非表示で実行するか（True/False）
 
+## テスト
+
+プロジェクトにはユニットテストが含まれています。テストを実行するには：
+
+```bash
+# すべてのテストを実行
+pytest
+
+# 詳細な出力でテストを実行
+pytest -v
+
+# 特定のテストファイルを実行
+pytest tests/test_sheets_reader.py
+
+# カバレッジレポート付きでテストを実行（オプション）
+pytest --cov=. --cov-report=html
+```
+
+### テストの構成
+
+- `tests/test_sheets_reader.py`: Googleシート読み込み機能のテスト
+- `tests/test_order_automation.py`: Playwright自動化機能のテスト
+
 ## 使用方法
 
 ```bash
