@@ -10,21 +10,64 @@ Googleシートから発注情報を読み込み、イーウーパスポート�
 - Playwrightを使用してイーウーパスポートの注文フォームに自動入力
 - 各商品ごとに新しいタブで注文フォームを開く
 
+## 前提条件
+
+- Python 3.8以上
+- Git
+- インターネット接続
+
 ## セットアップ
 
-### 1. 必要なパッケージのインストール
+### 1. リポジトリのクローン
 
 ```bash
+git clone https://github.com/asi1007/auto-order.git
+cd auto-order
+```
+
+### 2. Python仮想環境の作成（推奨）
+
+仮想環境を使用することで、プロジェクトごとに依存パッケージを分離できます。
+
+```bash
+# 仮想環境を作成
+python3 -m venv venv
+
+# 仮想環境をアクティベート
+# macOS/Linux の場合:
+source venv/bin/activate
+
+# Windows の場合:
+venv\Scripts\activate
+```
+
+仮想環境がアクティブになると、プロンプトの先頭に `(venv)` が表示されます。
+
+### 3. 必要なPythonパッケージのインストール
+
+```bash
+# requirements.txtから依存パッケージをインストール
 pip install -r requirements.txt
 ```
 
-### 2. Playwrightブラウザのインストール
+インストールされるパッケージ：
+- `gspread` - Google Sheets API クライアント
+- `oauth2client` - Google API 認証
+- `playwright` - ブラウザ自動化
+- `python-dotenv` - 環境変数管理
+- `pandas` - データ処理
+- `pytest` / `pytest-mock` - テストフレームワーク
+
+### 4. Playwrightブラウザのインストール
 
 ```bash
+# Chromiumブラウザをインストール
 playwright install chromium
 ```
 
-### 3. Google Sheets API認証の設定
+このコマンドは、Playwrightが使用するChromiumブラウザをダウンロードします。
+
+### 5. Google Sheets API認証の設定
 
 1. [Google Cloud Console](https://console.cloud.google.com/) にアクセス
 2. プロジェクトを作成または選択
@@ -34,7 +77,7 @@ playwright install chromium
 6. ダウンロードしたJSONファイルを `credentials.json` として保存
 7. Googleシートでサービスアカウントのメールアドレスに閲覧権限を付与
 
-### 4. 環境変数の設定
+### 6. 環境変数の設定
 
 `.env.example` を `.env` にコピーして編集：
 
@@ -98,15 +141,97 @@ python main.py
 
 ## トラブルシューティング
 
+### Pythonのバージョン確認
+
+```bash
+python3 --version
+# または
+python --version
+```
+
+Python 3.8以上が必要です。インストールされていない場合は、[Python公式サイト](https://www.python.org/downloads/)からダウンロードしてください。
+
+### pip コマンドが見つからない
+
+```bash
+# pipのインストール確認
+pip --version
+
+# インストールされていない場合
+python3 -m ensurepip --upgrade
+```
+
+### パッケージのインストールに失敗する
+
+```bash
+# pipを最新版にアップグレード
+pip install --upgrade pip
+
+# requirements.txtから再インストール
+pip install -r requirements.txt
+```
+
 ### Google Sheets APIのエラー
-- サービスアカウントにシートへのアクセス権限があるか確認
-- credentials.jsonのパスが正しいか確認
+
+**症状**: 「認証情報ファイルが見つかりません」
+
+**解決方法**:
+1. `credentials.json` または `service_account.json` がプロジェクトのルートディレクトリにあるか確認
+2. `.env` ファイルの `GOOGLE_CREDENTIALS_FILE` のパスが正しいか確認
+
+**症状**: 「シートにアクセスできません」
+
+**解決方法**:
+1. サービスアカウントのメールアドレスをGoogleシートの共有設定に追加
+2. 閲覧権限以上を付与
 
 ### ブラウザが起動しない
-- `playwright install chromium` を実行したか確認
-- Pythonのバージョンが3.8以上か確認
+
+**解決方法**:
+```bash
+# Chromiumを再インストール
+playwright install chromium
+
+# Pythonのバージョン確認（3.8以上必要）
+python3 --version
+```
+
+### ログインに失敗する
+
+**解決方法**:
+1. `.env` ファイルの `YIWUPASSPORT_EMAIL` と `YIWUPASSPORT_PASSWORD` が正しいか確認
+2. メールアドレスとパスワードに余計なスペースがないか確認
+3. パスワードに特殊文字がある場合、正しくエスケープされているか確認
 
 ### データが紐付けられない
-- 両シートのASIN列（A列）のフォーマットが一致しているか確認
-- ASINに余計なスペースや改行が含まれていないか確認
+
+**解決方法**:
+1. 両シートのASIN列（A列）のフォーマットが一致しているか確認
+2. ASINに余計なスペースや改行が含まれていないか確認
+3. 発注数や単価が数値として認識されているか確認
+
+### 仮想環境から抜けたい
+
+```bash
+deactivate
+```
+
+### その他の問題
+
+問題が解決しない場合は、以下を確認してください：
+
+1. すべての依存パッケージが正しくインストールされているか
+   ```bash
+   pip list
+   ```
+
+2. エラーメッセージの内容を確認し、不足しているパッケージがあればインストール
+   ```bash
+   pip install <パッケージ名>
+   ```
+
+3. テストを実行して、基本機能が動作しているか確認
+   ```bash
+   pytest -v
+   ```
 
