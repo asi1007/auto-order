@@ -165,6 +165,14 @@ class SheetsReader:
         # 整数に変換
         merged_df['最終発注数'] = merged_df['最終発注数'].astype(int)
         
+        # 発注条件: 発注数が10以上のみ
+        before_filter_count = len(merged_df)
+        merged_df = merged_df[merged_df['最終発注数'] >= 10]
+        filtered_count = before_filter_count - len(merged_df)
+        
+        if filtered_count > 0:
+            print(f"情報: 発注数が10未満のため{filtered_count}件を除外しました")
+        
         # 辞書のリストに変換
         order_list = []
         for _, row in merged_df.iterrows():
@@ -178,7 +186,7 @@ class SheetsReader:
             }
             order_list.append(order_info)
         
-        print(f"✓ {len(order_list)}件の発注データを作成しました")
+        print(f"✓ {len(order_list)}件の発注データを作成しました（発注数10以上）")
         
         # 紐付けできなかったASINを表示
         sales_asins = set(sales_df['ASIN'])

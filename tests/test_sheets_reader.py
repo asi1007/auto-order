@@ -175,4 +175,52 @@ class TestSheetsReader:
         assert result[0]['発注数'] == 36
         assert result[0]['商品名'] == 'テスト商品'
         assert result[0]['単価'] == 150
+    
+    def test_merge_data_filter_minimum_quantity(self, sheets_reader):
+        """発注数10以上フィルタのテスト"""
+        sales_df = pd.DataFrame({
+            'ASIN': ['B001', 'B002', 'B003'],
+            '発注数': [5, 10, 3]  # 5*2=10(OK), 10*2=20(OK), 3*2=6(NG)
+        })
+        
+        purchase_df = pd.DataFrame({
+            'ASIN': ['B001', 'B002', 'B003'],
+            '購入先URL': ['http://test1.com', 'http://test2.com', 'http://test3.com'],
+            '題名': ['商品1', '商品2', '商品3'],
+            '色・サイズ等指定': ['Red', 'Blue', 'Green'],
+            '1商品辺り発注数': [2, 2, 2],
+            '単価': [100, 200, 300]
+        })
+        
+        # テスト実行
+        result = sheets_reader.merge_data(sales_df, purchase_df)
+        
+        # 検証：発注数10以上のみ（B001=10, B002=20）、B003=6は除外
+        assert len(result) == 2
+        assert result[0]['ASIN'] == 'B001'
+        assert result[0]['発注数'] == 10
+        assert result[1]['ASIN'] == 'B002'
+        assert result[1]['発注数'] == 20
+    
+    def test_merge_data_all_below_minimum(self, sheets_reader):
+        """すべて発注数10未満の場合のテスト"""
+        sales_df = pd.DataFrame({
+            'ASIN': ['B001', 'B002'],
+            '発注数': [2, 3]
+        })
+        
+        purchase_df = pd.DataFrame({
+            'ASIN': ['B001', 'B002'],
+            '購入先URL': ['http://test1.com', 'http://test2.com'],
+            '題名': ['商品1', '商品2'],
+            '色・サイズ等指定': ['Red', 'Blue'],
+            '1商品辺り発注数': [2, 2],
+            '単価': [100, 200]
+        })
+        
+        # テスト実行
+        result = sheets_reader.merge_data(sales_df, purchase_df)
+        
+        # 検証：すべて10未満なので結果は空
+        assert len(result) == 0
 
