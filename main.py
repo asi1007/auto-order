@@ -6,7 +6,7 @@ Googleシートから発注情報を読み込み、イーウーパスポート�
 
 import os
 from dotenv import load_dotenv
-from sheets_reader import get_order_data
+from sheets_reader import get_order_data, group_orders_by_url
 from order_automation import automate_orders
 
 
@@ -56,24 +56,32 @@ def main():
             print("\n処理する発注データがありません")
             return
         
+        # ステップ2: 購入先URLごとにグループ化
+        print("\n[ステップ2] 購入先URLごとにグループ化しています...")
+        print("-" * 60)
+        order_groups = group_orders_by_url(order_list, max_items_per_group=5)
+        
         # 発注データの確認
         print("\n[発注データ一覧]")
         print("-" * 60)
-        for i, order in enumerate(order_list, 1):
-            print(f"{i}. {order['商品名']} (ASIN: {order['ASIN']})")
-            print(f"   発注数: {order['発注数']}, 単価: {order['単価']}")
+        for i, group in enumerate(order_groups, 1):
+            print(f"\nグループ{i}: {group[0]['購入先URL']}")
+            for j, order in enumerate(group, 1):
+                print(f"  商品{j}: {order['商品名']} (ASIN: {order['ASIN']})")
+                print(f"         発注数: {order['発注数']}, 単価: {order['単価']}")
         
         # ユーザーに確認
+        total_items = sum(len(group) for group in order_groups)
         print("\n" + "-" * 60)
-        response = input(f"\n{len(order_list)}件の注文を処理しますか？ (y/N): ")
+        response = input(f"\n{len(order_groups)}グループ（合計{total_items}商品）の注文を処理しますか？ (y/N): ")
         if response.lower() != 'y':
             print("処理をキャンセルしました")
             return
         
-        # ステップ2: ブラウザで注文フォームに自動入力
-        print("\n[ステップ2] 注文フォームに自動入力を開始します...")
+        # ステップ3: ブラウザで注文フォームに自動入力
+        print("\n[ステップ3] 注文フォームに自動入力を開始します...")
         print("-" * 60)
-        automate_orders(order_list, headless=headless, email=yiwupassport_email, password=yiwupassport_password)
+        automate_orders(order_groups, headless=headless, email=yiwupassport_email, password=yiwupassport_password)
         
         print("\n処理が完了しました")
         

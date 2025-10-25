@@ -204,6 +204,44 @@ class SheetsReader:
         return order_list
 
 
+def group_orders_by_url(order_list: List[Dict], max_items_per_group: int = 5) -> List[List[Dict]]:
+    """
+    購入先URLごとに注文をグループ化する
+    
+    Args:
+        order_list: 発注情報のリスト
+        max_items_per_group: 1グループあたりの最大商品数（デフォルト: 5）
+        
+    Returns:
+        List[List[Dict]]: 購入先URLごとにグループ化された発注情報のリスト
+    """
+    from collections import defaultdict
+    
+    # 購入先URLごとにグループ化
+    url_groups = defaultdict(list)
+    for order in order_list:
+        url_groups[order['購入先URL']].append(order)
+    
+    # 各グループを最大商品数ごとに分割
+    grouped_orders = []
+    for url, orders in url_groups.items():
+        # 最大商品数ごとに分割
+        for i in range(0, len(orders), max_items_per_group):
+            group = orders[i:i + max_items_per_group]
+            grouped_orders.append(group)
+    
+    total_groups = len(grouped_orders)
+    total_items = sum(len(group) for group in grouped_orders)
+    print(f"✓ {total_items}件の商品を{total_groups}グループにまとめました")
+    
+    # グループの詳細を表示
+    for i, group in enumerate(grouped_orders, 1):
+        url = group[0]['購入先URL']
+        print(f"  グループ{i}: {url} ({len(group)}商品)")
+    
+    return grouped_orders
+
+
 def get_order_data(credentials_file: str, sales_url: str, purchase_url: str) -> List[Dict]:
     """
     Googleシートから発注データを取得する便利関数

@@ -107,19 +107,25 @@ class OrderAutomation:
         except Exception as e:
             raise Exception(f"ログイン処理中にエラーが発生しました: {e}")
     
-    def fill_order_form(self, order_info: Dict):
+    def fill_order_form(self, order_group: List[Dict]):
         """
-        注文フォームに情報を入力
+        注文フォームに複数商品の情報を入力（商品1〜5）
         
         Args:
-            order_info: 注文情報の辞書
+            order_group: 注文情報の辞書のリスト（最大5件）
         """
         try:
             # 新しいタブを開く
             page = self.context.new_page()
             self.pages.append(page)
             
-            print(f"\n--- {order_info['ASIN']} の注文フォームを開いています ---")
+            # グループ内の全ASINを表示
+            asins = [order['ASIN'] for order in order_group]
+            purchase_url = order_group[0]['購入先URL']
+            
+            print(f"\n--- 注文フォームを開いています ---")
+            print(f"  購入先URL: {purchase_url}")
+            print(f"  商品数: {len(order_group)}件 ({', '.join(asins)})")
             
             # イーウーパスポートの注文ページに移動
             page.goto('https://yiwupassport.jp/order', timeout=30000)
@@ -129,44 +135,45 @@ class OrderAutomation:
             
             print(f"✓ 注文ページを開きました")
             
-            # フォーム入力（商品1のフィールドに入力）
-            # 実際のイーウーパスポートのフォームフィールド名に基づいて入力
+            # 各商品をフォームに入力（商品1〜5）
+            for idx, order_info in enumerate(order_group, 1):
+                print(f"\n  商品{idx}: {order_info['ASIN']} を入力中...")
+                
+                # 商品名を入力
+                if self._fill_field(page, order_info['商品名'], 
+                                   [f'input[name="item_name{idx}"]']):
+                    print(f"    ✓ 商品名: {order_info['商品名']}")
+                
+                # 商品URLを入力
+                if self._fill_field(page, order_info['購入先URL'], 
+                                   [f'input[name="item_url{idx}"]']):
+                    print(f"    ✓ 商品URL: {order_info['購入先URL']}")
+                
+                # 色・サイズ等指定を入力
+                if order_info['色・サイズ等指定']:
+                    if self._fill_field(page, order_info['色・サイズ等指定'], 
+                                       [f'textarea[name="item_size{idx}"]']):
+                        print(f"    ✓ 色・サイズ等指定: {order_info['色・サイズ等指定']}")
+                
+                # 発注数を入力
+                if self._fill_field(page, str(order_info['発注数']), 
+                                   [f'input[name="item_lot{idx}"]']):
+                    print(f"    ✓ 発注数: {order_info['発注数']}")
+                
+                # 単価を入力
+                if order_info['単価']:
+                    if self._fill_field(page, str(order_info['単価']), 
+                                       [f'input[name="item_price{idx}"]']):
+                        print(f"    ✓ 単価: {order_info['単価']}")
             
-            # 商品名を入力（item_name1）
-            if self._fill_field(page, order_info['商品名'], 
-                               ['input[name="item_name1"]']):
-                print(f"  ✓ 商品名: {order_info['商品名']}")
-            
-            # 商品URLを入力（item_url1）
-            if self._fill_field(page, order_info['購入先URL'], 
-                               ['input[name="item_url1"]']):
-                print(f"  ✓ 商品URL: {order_info['購入先URL']}")
-            
-            # 色・サイズ等指定を入力（item_size1）
-            if order_info['色・サイズ等指定']:
-                if self._fill_field(page, order_info['色・サイズ等指定'], 
-                                   ['textarea[name="item_size1"]']):
-                    print(f"  ✓ 色・サイズ等指定: {order_info['色・サイズ等指定']}")
-            
-            # 発注数を入力（item_lot1）
-            if self._fill_field(page, str(order_info['発注数']), 
-                               ['input[name="item_lot1"]']):
-                print(f"  ✓ 発注数: {order_info['発注数']}")
-            
-            # 単価を入力（item_price1）
-            if order_info['単価']:
-                if self._fill_field(page, str(order_info['単価']), 
-                                   ['input[name="item_price1"]']):
-                    print(f"  ✓ 単価: {order_info['単価']}")
-            
-            print(f"✓ {order_info['ASIN']} の入力が完了しました")
+            print(f"\n✓ {len(order_group)}商品の入力が完了しました")
             print("  注意: 注文確認ボタンは自動でクリックされません。内容を確認して手動で発注してください。")
             
             # 少し待機（ユーザーが確認できるように）
             time.sleep(1)
             
         except Exception as e:
-            print(f"✗ {order_info['ASIN']} の入力中にエラーが発生しました: {e}")
+            print(f"✗ 注文グループの入力中にエラーが発生しました: {e}")
             raise
     
     def _fill_field(self, page: Page, value: str, selectors: List[str]) -> bool:
@@ -198,14 +205,14 @@ class OrderAutomation:
         print(f"  警告: フィールドが見つかりませんでした（値: {value}）")
         return False
     
-    def process_orders(self, order_list: List[Dict]):
+    def process_orders(self, order_groups: List[List[Dict]]):
         """
-        複数の注文を処理
+        複数の注文グループを処理
         
         Args:
-            order_list: 注文情報のリスト
+            order_groups: 注文情報のグループのリスト（各グループは最大5商品）
         """
-        if not order_list:
+        if not order_groups:
             print("処理する注文がありません")
             return
         
@@ -219,17 +226,18 @@ class OrderAutomation:
                     print("ログインに失敗したため、処理を中止します")
                     return
             
-            print(f"\n{len(order_list)}件の注文を処理します...")
+            total_items = sum(len(group) for group in order_groups)
+            print(f"\n{len(order_groups)}グループ（合計{total_items}商品）の注文を処理します...")
             
-            for i, order_info in enumerate(order_list, 1):
-                print(f"\n[{i}/{len(order_list)}] 処理中...")
+            for i, order_group in enumerate(order_groups, 1):
+                print(f"\n[{i}/{len(order_groups)}] グループ処理中...")
                 try:
-                    self.fill_order_form(order_info)
+                    self.fill_order_form(order_group)
                 except Exception as e:
-                    print(f"注文の処理をスキップします: {e}")
+                    print(f"注文グループの処理をスキップします: {e}")
                     continue
                 
-                # 次の注文まで少し待機
+                # 次のグループまで少し待機
                 time.sleep(2)
             
             print(f"\n{'='*60}")
@@ -251,16 +259,16 @@ class OrderAutomation:
             self.close_browser()
 
 
-def automate_orders(order_list: List[Dict], headless: bool = False, email: str = None, password: str = None):
+def automate_orders(order_groups: List[List[Dict]], headless: bool = False, email: str = None, password: str = None):
     """
     注文の自動化を実行する便利関数
     
     Args:
-        order_list: 注文情報のリスト
+        order_groups: 注文情報のグループのリスト（各グループは最大5商品）
         headless: ヘッドレスモードで実行するか
         email: イーウーパスポートのログインメールアドレス
         password: イーウーパスポートのログインパスワード
     """
     automation = OrderAutomation(headless=headless, email=email, password=password)
-    automation.process_orders(order_list)
+    automation.process_orders(order_groups)
 

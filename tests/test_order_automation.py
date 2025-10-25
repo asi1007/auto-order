@@ -217,26 +217,52 @@ class TestOrderAutomation:
     
     @patch('order_automation.sync_playwright')
     def test_process_orders_empty_list(self, mock_playwright, automation):
-        """空の注文リストのテスト"""
+        """空の注文グループのテスト"""
         # テスト実行
         automation.process_orders([])
         
         # ブラウザが起動されないことを検証
         assert automation.playwright is None
     
+    def test_fill_order_form_multiple_products(self, automation):
+        """複数商品を1つのフォームに入力するテスト"""
+        mock_page = Mock()
+        mock_element = Mock()
+        
+        mock_page.query_selector.return_value = mock_element
+        automation.context = Mock()
+        automation.context.new_page.return_value = mock_page
+        
+        # 3商品のグループ
+        order_group = [
+            {'ASIN': 'B001', '商品名': '商品1', '購入先URL': 'http://test.com', 
+             '色・サイズ等指定': 'Red', '発注数': 10, '単価': 100},
+            {'ASIN': 'B002', '商品名': '商品2', '購入先URL': 'http://test.com', 
+             '色・サイズ等指定': 'Blue', '発注数': 20, '単価': 200},
+            {'ASIN': 'B003', '商品名': '商品3', '購入先URL': 'http://test.com', 
+             '色・サイズ等指定': 'Green', '発注数': 30, '単価': 300},
+        ]
+        
+        # テスト実行
+        automation.fill_order_form(order_group)
+        
+        # 3商品分のフィールドが入力されることを検証
+        # item_name1, item_name2, item_name3
+        assert mock_page.fill.call_count >= 15  # 各商品5フィールド × 3商品
+    
     @patch('order_automation.sync_playwright')
     def test_process_orders_without_login(self, mock_playwright):
         """ログイン情報なしでの注文処理テスト"""
         automation = OrderAutomation(headless=True)
         
-        order_list = [{
+        order_groups = [[{
             'ASIN': 'B001',
             '商品名': 'テスト',
             '購入先URL': 'http://test.com',
             '色・サイズ等指定': '',
             '発注数': 1,
             '単価': 100
-        }]
+        }]]
         
         # モックの設定
         mock_playwright_instance = MagicMock()
@@ -249,7 +275,7 @@ class TestOrderAutomation:
         
         # ログイン情報がないため例外が発生する
         with pytest.raises(Exception):
-            automation.process_orders(order_list)
+            automation.process_orders(order_groups)
 
 
 class TestOrderAutomationIntegration:
