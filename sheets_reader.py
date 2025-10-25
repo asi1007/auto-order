@@ -217,10 +217,17 @@ def group_orders_by_url(order_list: List[Dict], max_items_per_group: int = 5) ->
     """
     from collections import defaultdict
     
-    # 購入先URLごとにグループ化
+    # 購入先URLごとにグループ化（URLを正規化）
     url_groups = defaultdict(list)
     for order in order_list:
-        url_groups[order['購入先URL']].append(order)
+        # URLを正規化（前後の空白を削除、末尾のスラッシュを削除）
+        normalized_url = order['購入先URL'].strip().rstrip('/')
+        url_groups[normalized_url].append(order)
+    
+    # デバッグ情報: URL別の商品数を表示
+    print(f"\n購入先URL別の商品数:")
+    for url, orders in url_groups.items():
+        print(f"  {url}: {len(orders)}商品")
     
     # 各グループを最大商品数ごとに分割
     grouped_orders = []

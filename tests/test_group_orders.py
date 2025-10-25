@@ -101,4 +101,19 @@ class TestGroupOrdersByUrl:
         assert len(result) == 1
         assert len(result[0]) == 1
         assert result[0][0]['ASIN'] == 'B001'
+    
+    def test_group_orders_url_normalization(self):
+        """URL正規化のテスト（空白、末尾スラッシュ）"""
+        order_list = [
+            {'ASIN': 'B001', '商品名': '商品1', '購入先URL': 'http://test.com', '発注数': 10, '単価': 100},
+            {'ASIN': 'B002', '商品名': '商品2', '購入先URL': 'http://test.com/', '発注数': 20, '単価': 200},
+            {'ASIN': 'B003', '商品名': '商品3', '購入先URL': ' http://test.com ', '発注数': 30, '単価': 300},
+            {'ASIN': 'B004', '商品名': '商品4', '購入先URL': 'http://test.com/ ', '発注数': 40, '単価': 400},
+        ]
+        
+        result = group_orders_by_url(order_list)
+        
+        # すべて同じURLとして認識され、1グループにまとまる
+        assert len(result) == 1
+        assert len(result[0]) == 4
 
