@@ -3,6 +3,7 @@
 
 # Google認証情報
 credentials.json
+service_account.json
 
 # Python
 __pycache__/
