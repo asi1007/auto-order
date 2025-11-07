@@ -36,11 +36,12 @@ class TestSheetsReader:
     
     def test_read_sales_sheet_success(self, sheets_reader, mocker):
         """売上/日シートの読み込み成功のテスト"""
-        # モックデータの準備
+        # モックデータの準備（列名は2行目）
         mock_worksheet = Mock()
         mock_worksheet.get_all_values.return_value = [
-            ['ASIN', '発注数'],
-            ['B001', '10'],
+            ['1行目（無視）'],  # 1行目は無視される
+            ['ASIN', '発注数'],  # 2行目が列名
+            ['B001', '10'],  # 3行目以降がデータ
             ['B002', '20'],
             ['B003', '15']
         ]
@@ -64,7 +65,8 @@ class TestSheetsReader:
         """空データのテスト"""
         mock_worksheet = Mock()
         mock_worksheet.get_all_values.return_value = [
-            ['ASIN', '発注数']
+            ['1行目（無視）'],  # 1行目は無視される
+            ['ASIN', '発注数']  # 2行目が列名だが、データ行がない
         ]
         
         mock_spreadsheet = Mock()
@@ -80,11 +82,12 @@ class TestSheetsReader:
     
     def test_read_purchase_sheet_success(self, sheets_reader, mocker):
         """仕入情報シートの読み込み成功のテスト"""
-        # モックデータの準備（12列以上必要）
+        # モックデータの準備（12列以上必要、列名は2行目）
         mock_worksheet = Mock()
         mock_worksheet.get_all_values.return_value = [
-            ['ASIN', 'Col2', 'Col3', '購入先URL', '題名', '色・サイズ', '発注数', 'Col8', 'Col9', 'Col10', 'Col11', '単価'],
-            ['B001', '', '', 'http://test1.com', '商品1', 'Red/M', '5', '', '', '', '', '100'],
+            ['1行目（無視）'],  # 1行目は無視される
+            ['ASIN', 'Col2', 'Col3', '購入先URL', '題名', '色・サイズ', '発注数', 'Col8', 'Col9', 'Col10', 'Col11', '単価'],  # 2行目が列名
+            ['B001', '', '', 'http://test1.com', '商品1', 'Red/M', '5', '', '', '', '', '100'],  # 3行目以降がデータ
             ['B002', '', '', 'http://test2.com', '商品2', 'Blue/L', '10', '', '', '', '', '200'],
         ]
         
@@ -223,4 +226,90 @@ class TestSheetsReader:
         
         # 検証：すべて10未満なので結果は空
         assert len(result) == 0
+    
+    def test_bulk_discount_price_selection(self, sheets_reader):
+        """数量割引価格選択のテスト（B0F9WPDW92で600個発注）"""
+        sales_df = pd.DataFrame({
+            'ASIN': ['B0F9WPDW92'],
+            '発注数': [100]  # 100 * 6 = 600個になるように設定
+        })
+        
+        # 仕入情報シートのデータ（M列からZ列に数量割引情報を含む）
+        # 複数の数量割引階層がある場合を想定
+        # 500個以上: 5.8、600個以上: 5.5
+        purchase_df = pd.DataFrame({
+            'ASIN': ['B0F9WPDW92'],
+            '購入先URL': ['http://test.com'],
+            '題名': ['テスト商品'],
+            '色・サイズ等指定': [''],
+            '1商品辺り発注数': [6],  # 100 * 6 = 600個
+            '単価': [10.0],  # 基本単価
+            '500': [5.8],   # 500個以上で5.8
+            '600': [5.5]   # 600個以上で5.5
+        })
+        
+        # テスト実行
+        result = sheets_reader.merge_data(sales_df, purchase_df)
+        
+        # 検証：600個発注で価格が5.5になる（5.8ではなく5.5が選択される）
+        assert len(result) == 1
+        assert result[0]['ASIN'] == 'B0F9WPDW92'
+        assert result[0]['発注数'] == 600
+        assert result[0]['単価'] == 5.5  # 最も安い価格が選択される
+    
+    def test_bulk_discount_price_selection_multiple_tiers(self, sheets_reader):
+        """複数の数量割引階層がある場合のテスト"""
+        sales_df = pd.DataFrame({
+            'ASIN': ['B001'],
+            '発注数': [20]  # 20 * 5 = 100個になるように設定
+        })
+        
+        # 複数の数量割引階層がある場合
+        purchase_df = pd.DataFrame({
+            'ASIN': ['B001'],
+            '購入先URL': ['http://test.com'],
+            '題名': ['テスト商品'],
+            '色・サイズ等指定': [''],
+            '1商品辺り発注数': [5],  # 20 * 5 = 100個
+            '単価': [10.0],  # 基本単価
+            '50': [8.0],   # 50個以上で8.0
+            '100': [6.0],  # 100個以上で6.0
+            '200': [5.0]   # 200個以上で5.0
+        })
+        
+        # テスト実行
+        result = sheets_reader.merge_data(sales_df, purchase_df)
+        
+        # 検証：100個発注なので、100個以上の階層（6.0）が適用される
+        assert len(result) == 1
+        assert result[0]['ASIN'] == 'B001'
+        assert result[0]['発注数'] == 100
+        assert result[0]['単価'] == 6.0
+    
+    def test_bulk_discount_price_selection_below_minimum(self, sheets_reader):
+        """数量割引の最低数量に満たない場合のテスト"""
+        sales_df = pd.DataFrame({
+            'ASIN': ['B001'],
+            '発注数': [10]  # 10 * 1 = 10個になるように設定
+        })
+        
+        purchase_df = pd.DataFrame({
+            'ASIN': ['B001'],
+            '購入先URL': ['http://test.com'],
+            '題名': ['テスト商品'],
+            '色・サイズ等指定': [''],
+            '1商品辺り発注数': [1],  # 10 * 1 = 10個
+            '単価': [10.0],  # 基本単価
+            '50': [8.0],   # 50個以上で8.0
+            '100': [6.0]   # 100個以上で6.0
+        })
+        
+        # テスト実行
+        result = sheets_reader.merge_data(sales_df, purchase_df)
+        
+        # 検証：10個発注なので、数量割引は適用されず基本単価（10.0）が適用される
+        assert len(result) == 1
+        assert result[0]['ASIN'] == 'B001'
+        assert result[0]['発注数'] == 10
+        assert result[0]['単価'] == 10.0
 
