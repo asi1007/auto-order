@@ -11,14 +11,6 @@ class OrderAutomation:
     """イーウーパスポートの注文自動化クラス"""
     
     def __init__(self, headless: bool = False, email: str = None, password: str = None):
-        """
-        初期化
-        
-        Args:
-            headless: ヘッドレスモードで実行するか（デフォルト: False）
-            email: イーウーパスポートのログインメールアドレス
-            password: イーウーパスポートのログインパスワード
-        """
         self.headless = headless
         self.email = email
         self.password = password
@@ -44,7 +36,6 @@ class OrderAutomation:
             raise Exception(f"ブラウザの起動に失敗しました: {e}")
     
     def close_browser(self):
-        """ブラウザを閉じる"""
         try:
             if self.context:
                 self.context.close()
@@ -57,37 +48,24 @@ class OrderAutomation:
             print(f"ブラウザのクローズ中にエラーが発生しました: {e}")
     
     def login(self):
-        """
-        イーウーパスポートにログイン
-        
-        Returns:
-            bool: ログインに成功したかどうか
-        """
         if not self.email or not self.password:
             raise Exception("ログイン情報が設定されていません")
         
         try:
             print("\nイーウーパスポートにログインしています...")
             
-            # ログインページを開く
             page = self.context.new_page()
             page.goto('https://yiwupassport.jp/login', timeout=30000)
             page.wait_for_load_state('networkidle', timeout=30000)
             
-            # メールアドレスを入力
             email_selector = 'input[type="text"]'
             page.fill(email_selector, self.email)
-            print(f"  ✓ メールアドレスを入力しました")
             
-            # パスワードを入力
             password_selector = 'input[type="password"]'
             page.fill(password_selector, self.password)
-            print(f"  ✓ パスワードを入力しました")
             
-            # ログインボタンをクリック
             login_button_selector = 'button:has-text("ログインする")'
             page.click(login_button_selector)
-            print(f"  ✓ ログインボタンをクリックしました")
             
             # ログイン後のページ遷移を待機
             page.wait_for_load_state('networkidle', timeout=30000)
@@ -108,86 +86,67 @@ class OrderAutomation:
             raise Exception(f"ログイン処理中にエラーが発生しました: {e}")
     
     def fill_order_form(self, order_group: List[Dict]):
-        """
-        注文フォームに複数商品の情報を入力（商品1〜5）
-        
-        Args:
-            order_group: 注文情報の辞書のリスト（最大5件）
-        """
         try:
-            # 新しいタブを開く
             page = self.context.new_page()
             self.pages.append(page)
             
-            # グループ内の全ASINを表示
-            asins = [order['ASIN'] for order in order_group]
-            purchase_url = order_group[0]['購入先URL']
-            
-            print(f"\n--- 注文フォームを開いています ---")
-            print(f"  購入先URL: {purchase_url}")
-            print(f"  商品数: {len(order_group)}件 ({', '.join(asins)})")
-            
-            # イーウーパスポートの注文ページに移動
             page.goto('https://yiwupassport.jp/order', timeout=30000)
-            
-            # ページが完全に読み込まれるまで待機
             page.wait_for_load_state('networkidle', timeout=30000)
-            
             print(f"✓ 注文ページを開きました")
             
-            # 各商品をフォームに入力（商品1〜5）
-            for idx, order_info in enumerate(order_group, 1):
-                print(f"\n  商品{idx}: {order_info['ASIN']} を入力中...")
-                
-                # 商品名を入力
-                if self._fill_field(page, order_info['商品名'], 
-                                   [f'input[name="item_name{idx}"]']):
-                    print(f"    ✓ 商品名: {order_info['商品名']}")
-                
-                # 商品URLを入力
-                if self._fill_field(page, order_info['購入先URL'], 
-                                   [f'input[name="item_url{idx}"]']):
-                    print(f"    ✓ 商品URL: {order_info['購入先URL']}")
-                
-                # 色・サイズ等指定を入力
-                if order_info['色・サイズ等指定']:
-                    if self._fill_field(page, order_info['色・サイズ等指定'], 
-                                       [f'textarea[name="item_size{idx}"]']):
-                        print(f"    ✓ 色・サイズ等指定: {order_info['色・サイズ等指定']}")
-                
-                # 発注数を入力
-                if self._fill_field(page, str(order_info['発注数']), 
-                                   [f'input[name="item_lot{idx}"]']):
-                    print(f"    ✓ 発注数: {order_info['発注数']}")
-                
-                # 単価を入力
-                if order_info['単価']:
-                    if self._fill_field(page, str(order_info['単価']), 
-                                       [f'input[name="item_price{idx}"]']):
-                        print(f"    ✓ 単価: {order_info['単価']}")
+            # 各商品をフォームに入力
+            self._fill_order_items(page, order_group)
             
-            print(f"\n✓ {len(order_group)}商品の入力が完了しました")
-            print("  注意: 注文確認ボタンは自動でクリックされません。内容を確認して手動で発注してください。")
-            
-            # 少し待機（ユーザーが確認できるように）
-            time.sleep(1)
+            # 注文確認ボタンをクリックして送信
+            self._confirm_and_submit_order(page)
             
         except Exception as e:
             print(f"✗ 注文グループの入力中にエラーが発生しました: {e}")
             raise
     
-    def _fill_field(self, page: Page, value: str, selectors: List[str]) -> bool:
-        """
-        複数のセレクタを試して入力フィールドに値を入力
-        
-        Args:
-            page: Playwrightのページオブジェクト
-            value: 入力する値
-            selectors: 試すセレクタのリスト
+    def _fill_order_items(self, page: Page, order_group: List[Dict]):
+        for idx, order_info in enumerate(order_group, 1):
+            print(f"\n  商品{idx}: {order_info['ASIN']} を入力中...")
+            self._fill_field(page, order_info['商品名'], [f'input[name="item_name{idx}"]'])
+            self._fill_field(page, order_info['購入先URL'], [f'input[name="item_url{idx}"]'])
+            self._fill_field(page, str(order_info['発注数']), [f'input[name="item_lot{idx}"]'])
+            if order_info['色・サイズ等指定']:
+                self._fill_field(page, order_info['色・サイズ等指定'], [f'textarea[name="item_size{idx}"]'])
+            self._fill_field(page, str(order_info['単価']), [f'input[name="item_price{idx}"]'])
+        print(f"\n✓ {len(order_group)}商品の入力が完了しました")
+    
+    def _confirm_and_submit_order(self, page: Page):
+        try:
+            # 注文確認ボタンをクリック
+            confirm_button_selector = '#btn-confirm'
+            page.wait_for_selector(confirm_button_selector, state='visible', timeout=10000)
+            page.click(confirm_button_selector)
+            print("    ✓ 注文確認ボタンをクリックしました")
             
-        Returns:
-            bool: 入力に成功したかどうか
-        """
+            # モーダルが表示されるまで待機
+            modal_selector = '#modal-confirm'
+            page.wait_for_selector(modal_selector, state='visible', timeout=10000)
+            print("    ✓ 確認モーダルが表示されました")
+            
+            # 少し待機（モーダルのアニメーション完了を待つ）
+            time.sleep(1)
+            
+            # 「上記の内容で登録する」ボタンをクリック
+            complete_button_selector = '#btn-complete'
+            page.wait_for_selector(complete_button_selector, state='visible', timeout=10000)
+            page.click(complete_button_selector)
+            print("    ✓ 「上記の内容で登録する」ボタンをクリックしました")
+            
+            # フォーム送信後のページ遷移を待機
+            page.wait_for_load_state('networkidle', timeout=30000)
+            print("    ✓ 注文が送信されました")
+            
+        except Exception as e:
+            print(f"    ✗ 注文確認処理中にエラーが発生しました: {e}")
+            print("    手動で注文確認ボタンをクリックしてください")
+            raise
+    
+    def _fill_field(self, page: Page, value: str, selectors: List[str]) -> bool:
         for selector in selectors:
             try:
                 # 要素が存在するか確認
@@ -206,20 +165,12 @@ class OrderAutomation:
         return False
     
     def process_orders(self, order_groups: List[List[Dict]]):
-        """
-        複数の注文グループを処理
-        
-        Args:
-            order_groups: 注文情報のグループのリスト（各グループは最大5商品）
-        """
         if not order_groups:
             print("処理する注文がありません")
             return
         
         try:
             self.start_browser()
-            
-            # ログイン処理
             if not self.is_logged_in:
                 login_success = self.login()
                 if not login_success:
@@ -242,13 +193,7 @@ class OrderAutomation:
             
             print(f"\n{'='*60}")
             print(f"すべての注文フォームへの入力が完了しました")
-            print(f"開いているタブ数: {len(self.pages)}")
-            print(f"各タブで内容を確認し、問題なければ手動で注文確認ボタンをクリックしてください")
-            print(f"{'='*60}")
             
-            # ユーザーが確認できるようにブラウザを開いたまま待機
-            # 注: 実際の運用では、この待機を削除するか調整してください
-            print("\n確認後、スクリプトを終了するには Ctrl+C を押してください...")
             try:
                 while True:
                     time.sleep(1)
