@@ -5,6 +5,7 @@ Playwrightを使用してイーウーパスポートの注文フォームに自�
 from playwright.sync_api import sync_playwright, Page, Browser
 from typing import List, Dict
 import time
+import logging
 
 
 class OrderAutomation:
@@ -169,51 +170,46 @@ class OrderAutomation:
             print("処理する注文がありません")
             return
         
-        try:
-            self.start_browser()
-            if not self.is_logged_in:
-                login_success = self.login()
-                if not login_success:
-                    print("ログインに失敗したため、処理を中止します")
-                    return
-            
-            total_items = sum(len(group) for group in order_groups)
-            print(f"\n{len(order_groups)}グループ（合計{total_items}商品）の注文を処理します...")
-            
-            for i, order_group in enumerate(order_groups, 1):
-                print(f"\n[{i}/{len(order_groups)}] グループ処理中...")
-                try:
-                    self.fill_order_form(order_group)
-                except Exception as e:
-                    print(f"注文グループの処理をスキップします: {e}")
-                    continue
-                
-                # 次のグループまで少し待機
-                time.sleep(2)
-            
-            print(f"\n{'='*60}")
-            print(f"すべての注文フォームへの入力が完了しました")
-            
+        #try:
+        self.start_browser()
+        if not self.is_logged_in:
+            login_success = self.login()
+            if not login_success:
+                print("ログインに失敗したため、処理を中止します")
+                return
+        
+        total_items = sum(len(group) for group in order_groups)
+        print(f"\n{len(order_groups)}グループ（合計{total_items}商品）の注文を処理します...")
+        
+        for i, order_group in enumerate(order_groups, 1):
+            print(f"\n[{i}/{len(order_groups)}] グループ処理中...")
             try:
-                while True:
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                print("\n終了します...")
+                self.fill_order_form(order_group)
+            except Exception as e:
+                print(f"注文グループの処理をスキップします: {e}")
+                continue
             
-        finally:
-            self.close_browser()
+            # 次のグループまで少し待機
+            time.sleep(2)
+        
+        print(f"\n{'='*60}")
+        print(f"すべての注文フォームへの入力が完了しました")
+        self.close_browser()
+        
+        #finally:
+            #self.close_browser()
 
 
 def automate_orders(order_groups: List[List[Dict]], headless: bool = False, email: str = None, password: str = None):
-    """
-    注文の自動化を実行する便利関数
+    logger = logging.getLogger(__name__)
     
-    Args:
-        order_groups: 注文情報のグループのリスト（各グループは最大5商品）
-        headless: ヘッドレスモードで実行するか
-        email: イーウーパスポートのログインメールアドレス
-        password: イーウーパスポートのログインパスワード
-    """
+    logger.info("")
+    logger.info("[ステップ3] 注文フォームに自動入力を開始します...")
+    logger.info("-" * 60)
+    
     automation = OrderAutomation(headless=headless, email=email, password=password)
     automation.process_orders(order_groups)
+    
+    logger.info("")
+    logger.info("処理が完了しました")
 

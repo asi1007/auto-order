@@ -7,19 +7,38 @@ Googleシートから発注情報を読み込み、イーウーパスポート�
 import logging
 import os
 from dotenv import load_dotenv
-from sheets_reader import get_order_data, group_orders_by_url
+from sheets_reader import get_order_data, group_orders_by_url, NoOrderDataException
 from order_automation import automate_orders
+from chatwork_client import ChatworkClient
 
 
 logger = logging.getLogger(__name__)
 
 
-def main():
-    """メイン処理"""
-    logger.info("=" * 60)
-    logger.info("イーウーパスポート発注自動化システム")
-    logger.info("=" * 60)
+def validate_config(credentials_file: str, sales_url: str, purchase_url: str, 
+                    yiwupassport_email: str, yiwupassport_password: str) -> bool:
+    if not os.path.exists(credentials_file):
+        logger.error("エラー: 認証情報ファイル '%s' が見つかりません", credentials_file)
+        logger.error("Google Sheets APIの認証情報を設定してください")
+        logger.error("詳細はREADME.mdを参照してください")
+        return False
     
+    if not sales_url or not purchase_url:
+        logger.error("エラー: 環境変数が正しく設定されていません")
+        logger.error(".envファイルにSALES_SHEET_URLとPURCHASE_SHEET_URLを設定してください")
+        logger.error("詳細はREADME.mdを参照してください")
+        return False
+    
+    if not yiwupassport_email or not yiwupassport_password:
+        logger.error("エラー: イーウーパスポートのログイン情報が設定されていません")
+        logger.error(".envファイルにYIWUPASSPORT_EMAILとYIWUPASSPORT_PASSWORDを設定してください")
+        logger.error("詳細はREADME.mdを参照してください")
+        return False
+    
+    return True
+
+
+def main():
     # 環境変数を読み込み
     load_dotenv()
     
@@ -30,73 +49,22 @@ def main():
     yiwupassport_email = os.getenv('YIWUPASSPORT_EMAIL')
     yiwupassport_password = os.getenv('YIWUPASSPORT_PASSWORD')
     headless = os.getenv('HEADLESS', 'False').lower() == 'true'
+    chatwork_api_token = os.getenv('CHATWORK_API_TOKEN')
+    chatwork_room_id = os.getenv('CHATWORK_ROOM_ID', '397092794')
     
     # 設定の検証
-    if not os.path.exists(credentials_file):
-        logger.error("エラー: 認証情報ファイル '%s' が見つかりません", credentials_file)
-        logger.error("Google Sheets APIの認証情報を設定してください")
-        logger.error("詳細はREADME.mdを参照してください")
+    if not validate_config(credentials_file, sales_url, purchase_url, 
+                          yiwupassport_email, yiwupassport_password):
         return
     
-    if not sales_url or not purchase_url:
-        logger.error("エラー: 環境変数が正しく設定されていません")
-        logger.error(".envファイルにSALES_SHEET_URLとPURCHASE_SHEET_URLを設定してください")
-        logger.error("詳細はREADME.mdを参照してください")
-        return
-    
-    if not yiwupassport_email or not yiwupassport_password:
-        logger.error("エラー: イーウーパスポートのログイン情報が設定されていません")
-        logger.error(".envファイルにYIWUPASSPORT_EMAILとYIWUPASSPORT_PASSWORDを設定してください")
-        logger.error("詳細はREADME.mdを参照してください")
-        return
+    # Chatworkクライアントの初期化
+    chatwork_client = None
+    if chatwork_api_token:
+        chatwork_client = ChatworkClient(chatwork_api_token)
     
     try:
-        # ステップ1: Googleシートから発注データを取得
-        logger.info("")
-        logger.info("[ステップ1] Googleシートから発注データを読み込んでいます...")
-        logger.info("-" * 60)
         order_list = get_order_data(credentials_file, sales_url, purchase_url)
-        
-        if not order_list:
-            logger.info("")
-            logger.info("処理する発注データがありません")
-            return
-        
-        # ステップ2: 購入先URLごとにグループ化
-        logger.info("")
-        logger.info("[ステップ2] 購入先URLごとにグループ化しています...")
-        logger.info("-" * 60)
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
-        
-        # 発注データの確認
-        logger.info("")
-        logger.info("[発注データ一覧]")
-        logger.info("-" * 60)
-        for i, group in enumerate(order_groups, 1):
-            logger.info("")
-            logger.info("グループ%s: %s", i, group[0]["購入先URL"])
-            for j, order in enumerate(group, 1):
-                logger.info(
-                    "  商品%s: %s (ASIN: %s)",
-                    j,
-                    order["商品名"],
-                    order["ASIN"],
-                )
-                logger.info(
-                    "         発注数: %s, 単価: %s",
-                    order["発注数"],
-                    order["単価"],
-                )
-        
-        # ユーザーに確認
-        total_items = sum(len(group) for group in order_groups)
-        logger.info("")
-        logger.info(
-            "%sグループ（合計%s商品）の注文を処理します...",
-            len(order_groups),
-            total_items,
-        )
-        logger.info("処理を開始します")
         
         # ステップ3: ブラウザで注文フォームに自動入力
         logger.info("")
@@ -112,9 +80,32 @@ def main():
         logger.info("")
         logger.info("処理が完了しました")
         
-    except KeyboardInterrupt:
-        logger.warning("")
-        logger.warning("処理が中断されました")
+        # Chatworkに通知を送信（chatwork文章とchatwork添付がある場合のみ）
+        if chatwork_client:
+            for group in order_groups:
+                for order in group:
+                    chatwork_message = order.get('chatwork文章', '').strip()
+                    chatwork_attachment = order.get('chatwork添付', '').strip()
+                    
+                    if chatwork_message or chatwork_attachment:
+                        message = chatwork_message if chatwork_message else "[info]発注情報[/info]"
+                        
+                        file_id = None
+                        if chatwork_attachment:
+                            # chatwork添付がファイルパスの場合
+                            if os.path.exists(chatwork_attachment):
+                                file_id = chatwork_client.upload_file(chatwork_room_id, chatwork_attachment)
+                            # chatwork添付がURLの場合、メッセージに含める
+                            elif chatwork_attachment.startswith('http'):
+                                message += f"\n\n添付: {chatwork_attachment}"
+                        
+                        if message:
+                            chatwork_client.post_message(chatwork_room_id, message, file_id)
+                            logger.info(f"✓ Chatworkに通知を送信しました (ASIN: {order.get('ASIN', '')})")
+        
+    except NoOrderDataException:
+        logger.exception("オーダーがありません: %s", e)
+        return
     except Exception as e:
         logger.exception("エラーが発生しました: %s", e)
 
