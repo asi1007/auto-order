@@ -62,6 +62,27 @@ class ChatworkClient:
         except Exception as e:
             logger.error(f"Chatworkへのファイルアップロードに失敗しました: {e}")
             return None
+    
+    def send_order_notification(self, room_id: str, chatwork_message: str, chatwork_attachment: str, asin: str = "") -> bool:
+        if not chatwork_message and not chatwork_attachment:
+            return False
+        
+        message = chatwork_message if chatwork_message else "[info]発注情報[/info]"
+        
+        file_id = None
+        if chatwork_attachment:
+            if os.path.exists(chatwork_attachment):
+                file_id = self.upload_file(room_id, chatwork_attachment)
+            elif chatwork_attachment.startswith('http'):
+                message += f"\n\n添付: {chatwork_attachment}"
+        
+        if message:
+            success = self.post_message(room_id, message, file_id)
+            if success and asin:
+                logger.info(f"✓ Chatworkに通知を送信しました (ASIN: {asin})")
+            return success
+        
+        return False
 
 
 

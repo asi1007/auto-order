@@ -57,17 +57,13 @@ def main():
                           yiwupassport_email, yiwupassport_password):
         return
     
-    # Chatworkクライアントの初期化
-    chatwork_client = None
-    if chatwork_api_token:
-        chatwork_client = ChatworkClient(chatwork_api_token)
+    chatwork_client = ChatworkClient(chatwork_api_token)
     
     try:
         order_list = get_order_data(credentials_file, sales_url, purchase_url)
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
         
         # ステップ3: ブラウザで注文フォームに自動入力
-        logger.info("")
         logger.info("[ステップ3] 注文フォームに自動入力を開始します...")
         logger.info("-" * 60)
         automate_orders(
@@ -77,31 +73,21 @@ def main():
             password=yiwupassport_password,
         )
         
-        logger.info("")
         logger.info("処理が完了しました")
         
         # Chatworkに通知を送信（chatwork文章とchatwork添付がある場合のみ）
-        if chatwork_client:
-            for group in order_groups:
-                for order in group:
-                    chatwork_message = order.get('chatwork文章', '').strip()
-                    chatwork_attachment = order.get('chatwork添付', '').strip()
-                    
-                    if chatwork_message or chatwork_attachment:
-                        message = chatwork_message if chatwork_message else "[info]発注情報[/info]"
-                        
-                        file_id = None
-                        if chatwork_attachment:
-                            # chatwork添付がファイルパスの場合
-                            if os.path.exists(chatwork_attachment):
-                                file_id = chatwork_client.upload_file(chatwork_room_id, chatwork_attachment)
-                            # chatwork添付がURLの場合、メッセージに含める
-                            elif chatwork_attachment.startswith('http'):
-                                message += f"\n\n添付: {chatwork_attachment}"
-                        
-                        if message:
-                            chatwork_client.post_message(chatwork_room_id, message, file_id)
-                            logger.info(f"✓ Chatworkに通知を送信しました (ASIN: {order.get('ASIN', '')})")
+        for group in order_groups:
+            for order in group:
+                chatwork_message = order.get('chatwork文章', '').strip()
+                chatwork_attachment = order.get('chatwork添付', '').strip()
+                asin = order.get('ASIN', '')
+                
+                chatwork_client.send_order_notification(
+                    chatwork_room_id,
+                    chatwork_message,
+                    chatwork_attachment,
+                    asin
+                )
         
     except NoOrderDataException:
         logger.exception("オーダーがありません: %s", e)
