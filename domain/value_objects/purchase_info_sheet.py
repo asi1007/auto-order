@@ -81,11 +81,8 @@ class PurchaseInfoSheet:
     def asins(self) -> List[str]:
         return [item.asin for item in self._items]
     
-    def get_by_asin(self, asin: str) -> Optional[PurchaseInfoItem]:
-        for item in self._items:
-            if item.asin == asin:
-                return item
-        return None
+    def get_by_asin(self, asin: str) -> List[PurchaseInfoItem]:
+        return [item for item in self._items if item.asin == asin]
     
     def to_dataframe(self) -> pd.DataFrame:
         data = {
