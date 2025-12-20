@@ -20,6 +20,7 @@ class OrderAutomation:
         self.context = None
         self.pages = []
         self.is_logged_in = False
+        self.logger = logging.getLogger(__name__)
     
     def start_browser(self):
         """ブラウザを起動"""
@@ -32,7 +33,7 @@ class OrderAutomation:
             self.context = self.browser.new_context(
                 viewport={'width': 1280, 'height': 720}
             )
-            print("✓ ブラウザを起動しました")
+            self.logger.info("✓ ブラウザを起動しました")
         except Exception as e:
             raise Exception(f"ブラウザの起動に失敗しました: {e}")
     
@@ -44,16 +45,16 @@ class OrderAutomation:
                 self.browser.close()
             if self.playwright:
                 self.playwright.stop()
-            print("✓ ブラウザを閉じました")
+            self.logger.info("✓ ブラウザを閉じました")
         except Exception as e:
-            print(f"ブラウザのクローズ中にエラーが発生しました: {e}")
+            self.logger.error(f"ブラウザのクローズ中にエラーが発生しました: {e}")
     
     def login(self):
         if not self.email or not self.password:
             raise Exception("ログイン情報が設定されていません")
         
         try:
-            print("\nイーウーパスポートにログインしています...")
+            self.logger.info("イーウーパスポートにログインしています...")
             
             page = self.context.new_page()
             page.goto('https://yiwupassport.jp/login', timeout=30000)
@@ -74,12 +75,12 @@ class OrderAutomation:
             # ログインに成功したか確認（ダッシュボードまたは注文ページにリダイレクトされているか）
             current_url = page.url
             if 'login' not in current_url:
-                print("✓ ログインに成功しました")
+                self.logger.info("✓ ログインに成功しました")
                 self.is_logged_in = True
                 page.close()
                 return True
             else:
-                print("✗ ログインに失敗しました")
+                self.logger.error("✗ ログインに失敗しました")
                 page.close()
                 return False
                 
@@ -93,28 +94,25 @@ class OrderAutomation:
             
             page.goto('https://yiwupassport.jp/order', timeout=30000)
             page.wait_for_load_state('networkidle', timeout=30000)
-            print(f"✓ 注文ページを開きました")
+            self.logger.info("✓ 注文ページを開きました")
             
-            # 各商品をフォームに入力
             self._fill_order_items(page, order_group)
-            
-            # 注文確認ボタンをクリックして送信
             self._confirm_and_submit_order(page)
             
         except Exception as e:
-            print(f"✗ 注文グループの入力中にエラーが発生しました: {e}")
+            self.logger.error(f"✗ 注文グループの入力中にエラーが発生しました: {e}")
             raise
     
     def _fill_order_items(self, page: Page, order_group: List[Dict]):
         for idx, order_info in enumerate(order_group, 1):
-            print(f"\n  商品{idx}: {order_info['ASIN']} を入力中...")
+            self.logger.info(f"  商品{idx}: {order_info['ASIN']} を入力中...")
             self._fill_field(page, order_info['商品名'], [f'input[name="item_name{idx}"]'])
             self._fill_field(page, order_info['購入先URL'], [f'input[name="item_url{idx}"]'])
             self._fill_field(page, str(order_info['発注数']), [f'input[name="item_lot{idx}"]'])
             if order_info['色・サイズ等指定']:
                 self._fill_field(page, order_info['色・サイズ等指定'], [f'textarea[name="item_size{idx}"]'])
             self._fill_field(page, str(order_info['単価']), [f'input[name="item_price{idx}"]'])
-        print(f"\n✓ {len(order_group)}商品の入力が完了しました")
+        self.logger.info(f"✓ {len(order_group)}商品の入力が完了しました")
     
     def _confirm_and_submit_order(self, page: Page):
         try:
@@ -122,12 +120,12 @@ class OrderAutomation:
             confirm_button_selector = '#btn-confirm'
             page.wait_for_selector(confirm_button_selector, state='visible', timeout=10000)
             page.click(confirm_button_selector)
-            print("    ✓ 注文確認ボタンをクリックしました")
+            self.logger.info("    ✓ 注文確認ボタンをクリックしました")
             
             # モーダルが表示されるまで待機
             modal_selector = '#modal-confirm'
             page.wait_for_selector(modal_selector, state='visible', timeout=10000)
-            print("    ✓ 確認モーダルが表示されました")
+            self.logger.info("    ✓ 確認モーダルが表示されました")
             
             # 少し待機（モーダルのアニメーション完了を待つ）
             time.sleep(1)
@@ -136,15 +134,15 @@ class OrderAutomation:
             complete_button_selector = '#btn-complete'
             page.wait_for_selector(complete_button_selector, state='visible', timeout=10000)
             page.click(complete_button_selector)
-            print("    ✓ 「上記の内容で登録する」ボタンをクリックしました")
+            self.logger.info("    ✓ 「上記の内容で登録する」ボタンをクリックしました")
             
             # フォーム送信後のページ遷移を待機
             page.wait_for_load_state('networkidle', timeout=30000)
-            print("    ✓ 注文が送信されました")
+            self.logger.info("    ✓ 注文が送信されました")
             
         except Exception as e:
-            print(f"    ✗ 注文確認処理中にエラーが発生しました: {e}")
-            print("    手動で注文確認ボタンをクリックしてください")
+            self.logger.error(f"    ✗ 注文確認処理中にエラーが発生しました: {e}")
+            self.logger.warning("    手動で注文確認ボタンをクリックしてください")
             raise
     
     def _fill_field(self, page: Page, value: str, selectors: List[str]) -> bool:
@@ -162,12 +160,12 @@ class OrderAutomation:
                 continue
         
         # どのセレクタでも見つからなかった場合
-        print(f"  警告: フィールドが見つかりませんでした（値: {value}）")
+        self.logger.warning(f"  警告: フィールドが見つかりませんでした（値: {value}）")
         return False
     
     def process_orders(self, order_groups: List[List[Dict]]):
         if not order_groups:
-            print("処理する注文がありません")
+            self.logger.info("処理する注文がありません")
             return
         
         #try:
@@ -175,25 +173,25 @@ class OrderAutomation:
         if not self.is_logged_in:
             login_success = self.login()
             if not login_success:
-                print("ログインに失敗したため、処理を中止します")
+                self.logger.error("ログインに失敗したため、処理を中止します")
                 return
         
         total_items = sum(len(group) for group in order_groups)
-        print(f"\n{len(order_groups)}グループ（合計{total_items}商品）の注文を処理します...")
+        self.logger.info(f"{len(order_groups)}グループ（合計{total_items}商品）の注文を処理します...")
         
         for i, order_group in enumerate(order_groups, 1):
-            print(f"\n[{i}/{len(order_groups)}] グループ処理中...")
+            self.logger.info(f"[{i}/{len(order_groups)}] グループ処理中...")
             try:
                 self.fill_order_form(order_group)
             except Exception as e:
-                print(f"注文グループの処理をスキップします: {e}")
+                self.logger.warning(f"注文グループの処理をスキップします: {e}")
                 continue
             
             # 次のグループまで少し待機
             time.sleep(2)
         
-        print(f"\n{'='*60}")
-        print(f"すべての注文フォームへの入力が完了しました")
+        self.logger.info(f"{'='*60}")
+        self.logger.info(f"すべての注文フォームへの入力が完了しました")
         self.close_browser()
         
         #finally:
