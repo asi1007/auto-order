@@ -4,7 +4,7 @@ order_automation.pyのテストコード
 
 import pytest
 from unittest.mock import Mock, MagicMock, patch
-from order_automation import OrderAutomation
+from infrastructure.order_automation import OrderAutomation
 
 
 class TestOrderAutomation:
@@ -56,7 +56,7 @@ class TestOrderAutomation:
         assert automation.email is None
         assert automation.password is None
     
-    @patch('order_automation.sync_playwright')
+    @patch('infrastructure.order_automation.sync_playwright')
     def test_start_browser(self, mock_playwright, automation):
         """ブラウザ起動のテスト"""
         # モックの設定
@@ -95,7 +95,7 @@ class TestOrderAutomation:
         automation.browser.close.assert_called_once()
         automation.playwright.stop.assert_called_once()
     
-    @patch('order_automation.sync_playwright')
+    @patch('infrastructure.order_automation.sync_playwright')
     def test_login_success(self, mock_playwright, automation):
         """ログイン成功のテスト"""
         # モックの設定
@@ -124,7 +124,7 @@ class TestOrderAutomation:
         mock_page.fill.assert_any_call('input[type="text"]', 'test@example.com')
         mock_page.fill.assert_any_call('input[type="password"]', 'testpass')
     
-    @patch('order_automation.sync_playwright')
+    @patch('infrastructure.order_automation.sync_playwright')
     def test_login_failure(self, mock_playwright, automation):
         """ログイン失敗のテスト"""
         # モックの設定
@@ -215,7 +215,7 @@ class TestOrderAutomation:
         assert result is True
         assert mock_page.query_selector.call_count == 2
     
-    @patch('order_automation.sync_playwright')
+    @patch('infrastructure.order_automation.sync_playwright')
     def test_process_orders_empty_list(self, mock_playwright, automation):
         """空の注文グループのテスト"""
         # テスト実行
@@ -250,7 +250,7 @@ class TestOrderAutomation:
         # item_name1, item_name2, item_name3
         assert mock_page.fill.call_count >= 15  # 各商品5フィールド × 3商品
     
-    @patch('order_automation.sync_playwright')
+    @patch('infrastructure.order_automation.sync_playwright')
     def test_process_orders_without_login(self, mock_playwright):
         """ログイン情報なしでの注文処理テスト"""
         automation = OrderAutomation(headless=True)

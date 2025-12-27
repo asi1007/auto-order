@@ -58,7 +58,7 @@ def group_orders_by_url(order_list: List[Dict], max_items_per_group: int = 5) ->
     
     # デバッグ情報: URL別の商品数を表示
     for url, orders in url_groups.items():
-        print(f"  {url}: {len(orders)}商品")
+        logger.info(f"  {url}: {len(orders)}商品")
     
     # 各グループを最大商品数ごとに分割
     grouped_orders = []
@@ -70,12 +70,12 @@ def group_orders_by_url(order_list: List[Dict], max_items_per_group: int = 5) ->
     
     total_groups = len(grouped_orders)
     total_items = sum(len(group) for group in grouped_orders)
-    print(f"✓ {total_items}件の商品を{total_groups}グループにまとめました")
+    logger.info(f"✓ {total_items}件の商品を{total_groups}グループにまとめました")
     
     # グループの詳細を表示
     for i, group in enumerate(grouped_orders, 1):
         url = group[0]['購入先URL']
-        print(f"  グループ{i}: {url} ({len(group)}商品)")
+        logger.info(f"  グループ{i}: {url} ({len(group)}商品)")
     
     # 発注データの確認
     logger.info("[発注データ一覧]")

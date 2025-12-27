@@ -3,7 +3,7 @@ group_orders_by_url関数のテストコード
 """
 
 import pytest
-from sheets_reader import group_orders_by_url
+from infrastructure.sheets_reader import group_orders_by_url
 
 
 class TestGroupOrdersByUrl:

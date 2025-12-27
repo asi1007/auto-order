@@ -5,7 +5,7 @@ sheets_reader.pyのテストコード
 import pytest
 import pandas as pd
 from unittest.mock import Mock, patch, MagicMock
-from sheets_reader import SheetsReader
+from infrastructure.sheets_reader import SheetsReader
 
 
 class TestSheetsReader:
@@ -14,13 +14,13 @@ class TestSheetsReader:
     @pytest.fixture
     def mock_credentials(self, mocker):
         """認証情報のモック"""
-        mock_creds = mocker.patch('sheets_reader.ServiceAccountCredentials.from_json_keyfile_name')
+        mock_creds = mocker.patch('infrastructure.sheets_reader.ServiceAccountCredentials.from_json_keyfile_name')
         return mock_creds
     
     @pytest.fixture
     def mock_client(self, mocker):
         """gspreadクライアントのモック"""
-        mock_client = mocker.patch('sheets_reader.gspread.authorize')
+        mock_client = mocker.patch('infrastructure.sheets_reader.gspread.authorize')
         return mock_client
     
     @pytest.fixture

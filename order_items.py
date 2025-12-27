@@ -1,5 +1,5 @@
 """
-イーウーパスポート発注自動化メインスクリプト
+商品発注自動化スクリプト
 
 Googleシートから発注情報を読み込み、イーウーパスポートの注文フォームに自動入力します。
 """
@@ -36,7 +36,7 @@ def validate_config(credentials_file: str, sales_url: str, purchase_url: str,
     return True
 
 
-def main():
+def order_items():
     # 環境変数を読み込み
     load_dotenv()
     
@@ -98,5 +98,5 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    main()
+    order_items()
 
