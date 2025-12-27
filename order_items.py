@@ -7,33 +7,10 @@ Googleシートから発注情報を読み込み、イーウーパスポート�
 import logging
 import os
 from dotenv import load_dotenv
-from infrastructure import get_order_data, group_orders_by_url, NoOrderDataException, automate_orders, ChatworkClient
+from infrastructure import get_order_data, group_orders_by_url, NoOrderDataException, automate_orders, ChatworkClient, validate_config, record_purchase_history
 
 
 logger = logging.getLogger(__name__)
-
-
-def validate_config(credentials_file: str, sales_url: str, purchase_url: str, 
-                    yiwupassport_email: str, yiwupassport_password: str) -> bool:
-    if not os.path.exists(credentials_file):
-        logger.error("エラー: 認証情報ファイル '%s' が見つかりません", credentials_file)
-        logger.error("Google Sheets APIの認証情報を設定してください")
-        logger.error("詳細はREADME.mdを参照してください")
-        return False
-    
-    if not sales_url or not purchase_url:
-        logger.error("エラー: 環境変数が正しく設定されていません")
-        logger.error(".envファイルにSALES_SHEET_URLとPURCHASE_SHEET_URLを設定してください")
-        logger.error("詳細はREADME.mdを参照してください")
-        return False
-    
-    if not yiwupassport_email or not yiwupassport_password:
-        logger.error("エラー: イーウーパスポートのログイン情報が設定されていません")
-        logger.error(".envファイルにYIWUPASSPORT_EMAILとYIWUPASSPORT_PASSWORDを設定してください")
-        logger.error("詳細はREADME.mdを参照してください")
-        return False
-    
-    return True
 
 
 def order_items():
@@ -44,6 +21,8 @@ def order_items():
     credentials_file = os.getenv('GOOGLE_CREDENTIALS_FILE', 'credentials.json')
     sales_url = os.getenv('SALES_SHEET_URL')
     purchase_url = os.getenv('PURCHASE_SHEET_URL')
+    purchase_history_url = os.getenv('PURCHASE_HISTORY_SHEET_URL')
+    purchase_history_sheet_name = os.getenv('PURCHASE_HISTORY_SHEET_NAME')
     yiwupassport_email = os.getenv('YIWUPASSPORT_EMAIL')
     yiwupassport_password = os.getenv('YIWUPASSPORT_PASSWORD')
     headless = os.getenv('HEADLESS', 'False').lower() == 'true'
@@ -51,8 +30,13 @@ def order_items():
     chatwork_room_id = os.getenv('CHATWORK_ROOM_ID', '397092794')
     
     # 設定の検証
-    if not validate_config(credentials_file, sales_url, purchase_url, 
-                          yiwupassport_email, yiwupassport_password):
+    if not validate_config(
+        credentials_file,
+        yiwupassport_email,
+        yiwupassport_password,
+        sheet_urls=[sales_url, purchase_url],
+        sheet_url_names=['SALES_SHEET_URL', 'PURCHASE_SHEET_URL']
+    ):
         return
     
     chatwork_client = ChatworkClient(chatwork_api_token)
@@ -72,6 +56,14 @@ def order_items():
         )
         
         logger.info("処理が完了しました")
+        
+        # 購入履歴を記録
+        record_purchase_history(
+            credentials_file,
+            purchase_history_url,
+            order_groups,
+            purchase_history_sheet_name
+        )
         
         # Chatworkに通知を送信（chatwork文章とchatwork添付がある場合のみ）
         for group in order_groups:

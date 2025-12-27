@@ -105,13 +105,15 @@ class OrderAutomation:
     
     def _fill_order_items(self, page: Page, order_group: List[Dict]):
         for idx, order_info in enumerate(order_group, 1):
-            self.logger.info(f"  商品{idx}: {order_info['ASIN']} を入力中...")
+            item_identifier = order_info.get('ASIN', order_info.get('商品名', f'商品{idx}'))
+            self.logger.info(f"  商品{idx}: {item_identifier} を入力中...")
             self._fill_field(page, order_info['商品名'], [f'input[name="item_name{idx}"]'])
             self._fill_field(page, order_info['購入先URL'], [f'input[name="item_url{idx}"]'])
             self._fill_field(page, str(order_info['発注数']), [f'input[name="item_lot{idx}"]'])
-            if order_info['色・サイズ等指定']:
+            if order_info.get('色・サイズ等指定'):
                 self._fill_field(page, order_info['色・サイズ等指定'], [f'textarea[name="item_size{idx}"]'])
-            self._fill_field(page, str(order_info['単価']), [f'input[name="item_price{idx}"]'])
+            if order_info.get('単価'):
+                self._fill_field(page, str(order_info['単価']), [f'input[name="item_price{idx}"]'])
         self.logger.info(f"✓ {len(order_group)}商品の入力が完了しました")
     
     def _confirm_and_submit_order(self, page: Page):
