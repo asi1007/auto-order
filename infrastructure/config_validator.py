@@ -48,3 +48,4 @@ def validate_config(credentials_file: str,
     
     return True
 
+

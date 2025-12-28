@@ -8,19 +8,27 @@ import logging
 import os
 from dotenv import load_dotenv
 from domain.repositories.sheets_repository import SheetsRepository
-from infrastructure import group_orders_by_url, automate_orders, ChatworkClient, NoOrderDataException, validate_config, record_purchase_history
+from infrastructure import group_orders_by_url, OrderAutomation, NoOrderDataException, validate_config, record_purchase_history
 
 
 logger = logging.getLogger(__name__)
 
 
 def convert_packing_materials_to_order_format(packing_materials_item) -> dict:
+    assert packing_materials_item is not None, "packing_materials_itemはNoneであってはなりません"
+    assert packing_materials_item.material_name, "資材名称は必須です"
+    assert packing_materials_item.product_name, "商品名は必須です"
+    assert packing_materials_item.url, "URLは必須です"
+    assert packing_materials_item.order_quantity > 0, "発注数は0より大きい必要があります"
+    
     return {
-        'ASIN': packing_materials_item.product_name,
+        'ASIN': packing_materials_item.material_name,
+        '資材名称': packing_materials_item.material_name,
         '商品名': packing_materials_item.product_name,
         '購入先URL': packing_materials_item.url,
         '色・サイズ等指定': packing_materials_item.detail,
         '発注数': packing_materials_item.order_quantity,
+        'ロットサイズ': packing_materials_item.lot_size,
         '単価': packing_materials_item.price if packing_materials_item.price > 0 else '',
         'chatwork文章': '',
         'chatwork添付': ''
@@ -31,14 +39,17 @@ def get_packing_materials_order_data(credentials_file: str, packing_materials_ur
     import logging
     logger = logging.getLogger(__name__)
     
-    logger.info("[ステップ1] Googleシートから梱包材発注データを読み込んでいます...")
-    logger.info("-" * 60)
+    assert credentials_file, "credentials_fileは必須です"
+    assert packing_materials_url, "packing_materials_urlは必須です"
     
+    logger.info("[ステップ1] Googleシートから梱包材発注データを読み込んでいます...")
     repository = SheetsRepository(credentials_file)
     packing_materials_sheet = repository.read_packing_materials_sheet(packing_materials_url, sheet_name)
+    assert packing_materials_sheet is not None, "packing_materials_sheetはNoneであってはなりません"
     
     order_list = []
     for item in packing_materials_sheet.items:
+        assert item.order_quantity >= 0, f"発注数は0以上である必要があります（商品: {item.product_name}）"
         if item.order_quantity > 0:
             order_info = convert_packing_materials_to_order_format(item)
             order_list.append(order_info)
@@ -49,9 +60,16 @@ def get_packing_materials_order_data(credentials_file: str, packing_materials_ur
     
     logger.info(f"✓ {len(order_list)}件の梱包材発注データを読み込みました")
     
+    assert len(order_list) > 0, "order_listは空であってはなりません"
+    
     logger.info("[発注データ一覧]")
     logger.info("-" * 60)
     for i, order in enumerate(order_list, 1):
+        assert "商品名" in order, f"order[{i}]に商品名がありません"
+        assert "購入先URL" in order, f"order[{i}]に購入先URLがありません"
+        assert "発注数" in order, f"order[{i}]に発注数がありません"
+        assert order["発注数"] > 0, f"order[{i}]の発注数は0より大きい必要があります"
+        
         logger.info(
             "  商品%s: %s",
             i,
@@ -94,18 +112,19 @@ def order_packing_materials():
     
     try:
         order_list = get_packing_materials_order_data(credentials_file, packing_materials_url, packing_materials_sheet_name)
+        assert order_list, "order_listは空であってはなりません"
+        
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
+        assert order_groups, "order_groupsは空であってはなりません"
         
-        logger.info("[ステップ3] 注文フォームに自動入力を開始します...")
-        logger.info("-" * 60)
-        automate_orders(
-            order_groups,
-            headless=headless,
-            email=yiwupassport_email,
-            password=yiwupassport_password,
-        )
-        
-        logger.info("処理が完了しました")
+        automation = OrderAutomation(headless=headless, email=yiwupassport_email, password=yiwupassport_password)
+        results = automation.process_orders(order_groups)
+
+        for result in results:
+            order_number = result.get("order_number")
+            group = result.get("order_group", [])
+            for order in group:
+                order["注文番号"] = order_number or ""
         
         # 購入履歴を記録
         record_purchase_history(
@@ -127,4 +146,5 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     order_packing_materials()
+
 

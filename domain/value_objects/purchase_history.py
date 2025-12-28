@@ -16,6 +16,8 @@ class PurchaseHistoryItem:
     detail: str
     quantity: int
     price: float
+    order_number: str = ""
+    material_name: str = ""
     
     def __post_init__(self):
         if not self.product_name or not self.product_name.strip():
@@ -38,11 +40,13 @@ class PurchaseHistorySheet:
     
     def to_dataframe(self) -> pd.DataFrame:
         data = {
-            '購入日': [item.purchase_date for item in self._items],
+            '注文日': [item.purchase_date for item in self._items],
+            '注文番号': [item.order_number for item in self._items],
+            '発注資材名称': [item.material_name for item in self._items],
             '商品名': [item.product_name for item in self._items],
             'URL': [item.url for item in self._items],
             '詳細': [item.detail for item in self._items],
-            '数量': [item.quantity for item in self._items],
+            '個数': [item.quantity for item in self._items],
             '価格': [item.price for item in self._items]
         }
         return pd.DataFrame(data)
@@ -94,4 +98,5 @@ class PurchaseHistorySheet:
     
     def __repr__(self) -> str:
         return f"PurchaseHistorySheet(items={len(self._items)})"
+
 

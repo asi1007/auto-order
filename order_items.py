@@ -7,7 +7,7 @@ Googleシートから発注情報を読み込み、イーウーパスポート�
 import logging
 import os
 from dotenv import load_dotenv
-from infrastructure import get_order_data, group_orders_by_url, NoOrderDataException, automate_orders, ChatworkClient, validate_config, record_purchase_history
+from infrastructure import get_order_data, group_orders_by_url, NoOrderDataException, OrderAutomation, ChatworkClient, validate_config, record_purchase_history
 
 
 logger = logging.getLogger(__name__)
@@ -45,17 +45,14 @@ def order_items():
         order_list = get_order_data(credentials_file, sales_url, purchase_url)
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
         
-        # ステップ3: ブラウザで注文フォームに自動入力
-        logger.info("[ステップ3] 注文フォームに自動入力を開始します...")
-        logger.info("-" * 60)
-        automate_orders(
-            order_groups,
-            headless=headless,
-            email=yiwupassport_email,
-            password=yiwupassport_password,
-        )
-        
-        logger.info("処理が完了しました")
+        automation = OrderAutomation(headless=headless, email=yiwupassport_email, password=yiwupassport_password)
+        results = automation.process_orders(order_groups)
+
+        for result in results:
+            order_number = result.get("order_number")
+            group = result.get("order_group", [])
+            for order in group:
+                order["注文番号"] = order_number or ""
         
         # 購入履歴を記録
         record_purchase_history(
