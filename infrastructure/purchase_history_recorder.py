@@ -5,7 +5,7 @@
 import logging
 from datetime import datetime
 from typing import List, Dict
-from domain.repositories.sheets_repository import SheetsRepository
+from infrastructure.repositories import BaseSheetsRepository, SheetsPurchaseHistoryRepository
 from domain.value_objects.purchase_history import PurchaseHistoryItem
 
 
@@ -63,18 +63,20 @@ def record_purchase_history(
     
     try:
         logger.info("[ステップ4] 購入履歴を記録しています...")
-        repository = SheetsRepository(credentials_file)
+        base = BaseSheetsRepository(credentials_file)
+        repository = SheetsPurchaseHistoryRepository(
+            credentials_file=credentials_file,
+            sheet_url=history_sheet_url,
+            sheet_name=sheet_name or "使用資材",
+            client=base.client,
+        )
         total_recorded = 0
         for group in order_groups:
             for order in group:
                 assert order is not None, "orderはNoneであってはなりません"
                 try:
                     history_item = convert_order_to_history_item(order)
-                    repository.append_purchase_history(
-                        history_sheet_url,
-                        history_item,
-                        sheet_name
-                    )
+                    repository.append(history_item)
                     total_recorded += 1
                 except Exception as e:
                     logger.warning(f"購入履歴の記録に失敗しました（商品: {order.get('商品名', '不明')}）: {e}")

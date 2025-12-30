@@ -14,13 +14,13 @@ class TestSheetsReader:
     @pytest.fixture
     def mock_credentials(self, mocker):
         """認証情報のモック"""
-        mock_creds = mocker.patch('infrastructure.sheets_reader.ServiceAccountCredentials.from_json_keyfile_name')
+        mock_creds = mocker.patch('infrastructure.repositories.base_sheets_repository.ServiceAccountCredentials.from_json_keyfile_name')
         return mock_creds
     
     @pytest.fixture
     def mock_client(self, mocker):
         """gspreadクライアントのモック"""
-        mock_client = mocker.patch('infrastructure.sheets_reader.gspread.authorize')
+        mock_client = mocker.patch('infrastructure.repositories.base_sheets_repository.gspread.authorize')
         return mock_client
     
     @pytest.fixture

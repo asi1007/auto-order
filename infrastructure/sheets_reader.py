@@ -4,7 +4,11 @@ Googleシートから発注情報を読み込むモジュール
 
 import pandas as pd
 from typing import List, Dict
-from domain.repositories.sheets_repository import SheetsRepository
+from infrastructure.repositories import (
+    BaseSheetsRepository,
+    SheetsSalesSheetRepository,
+    SheetsPurchaseInfoSheetRepository,
+)
 from domain.services.order_merge_service import OrderMergeService
 
 
@@ -14,19 +18,22 @@ class NoOrderDataException(Exception):
 
 class SheetsReader:
     def __init__(self, credentials_file: str):
-        self._repository = SheetsRepository(credentials_file)
+        self.credentials_file = credentials_file
+        base = BaseSheetsRepository(credentials_file)
+        self._sales_repository = SheetsSalesSheetRepository(credentials_file, client=base.client)
+        self._purchase_repository = SheetsPurchaseInfoSheetRepository(credentials_file, client=base.client)
         self._merge_service = OrderMergeService()
     
     @property
     def client(self):
-        return self._repository.client
+        return self._sales_repository.client
     
     def read_sales_sheet(self, sheet_url: str, sheet_name: str = "売上/日") -> pd.DataFrame:
-        sales_sheet = self._repository.read_sales_sheet(sheet_url, sheet_name)
+        sales_sheet = self._sales_repository.read(sheet_url, sheet_name)
         return sales_sheet.to_dataframe()
     
     def read_purchase_sheet(self, sheet_url: str, sheet_name: str = "仕入情報") -> pd.DataFrame:
-        purchase_info_sheet = self._repository.read_purchase_info_sheet(sheet_url, sheet_name)
+        purchase_info_sheet = self._purchase_repository.read(sheet_url, sheet_name)
         return purchase_info_sheet.to_dataframe()
     
     def merge_data(self, sales_df: pd.DataFrame, purchase_df: pd.DataFrame) -> List[Dict]:
@@ -39,6 +46,22 @@ class SheetsReader:
         
         # Serviceを使ってマージ
         return self._merge_service.merge(sales_sheet, purchase_info_sheet)
+
+    def get_order_data(self, sales_url: str, purchase_url: str) -> List[Dict]:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.info("[ステップ1] Googleシートから発注データを読み込んでいます...")
+
+        sales_df = self.read_sales_sheet(sales_url)
+        purchase_df = self.read_purchase_sheet(purchase_url)
+
+        order_list = self.merge_data(sales_df, purchase_df)
+        if not order_list:
+            logger.info("処理する発注データがありません")
+            raise NoOrderDataException("処理する発注データがありません")
+
+        return order_list
 
 
 def group_orders_by_url(order_list: List[Dict], max_items_per_group: int = 5) -> List[List[Dict]]:
@@ -108,22 +131,6 @@ def group_orders_by_url(order_list: List[Dict], max_items_per_group: int = 5) ->
 
 
 def get_order_data(credentials_file: str, sales_url: str, purchase_url: str) -> List[Dict]:
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    logger.info("[ステップ1] Googleシートから発注データを読み込んでいます...")
-    logger.info("-" * 60)
-    
     reader = SheetsReader(credentials_file)
-    
-    sales_df = reader.read_sales_sheet(sales_url)
-    purchase_df = reader.read_purchase_sheet(purchase_url)
-    
-    order_list = reader.merge_data(sales_df, purchase_df)
-    
-    if not order_list:
-        logger.info("処理する発注データがありません")
-        raise NoOrderDataException("処理する発注データがありません")
-    
-    return order_list
+    return reader.get_order_data(sales_url=sales_url, purchase_url=purchase_url)
 

@@ -50,11 +50,9 @@ class TestOrderAutomation:
     
     def test_initialization_without_credentials(self):
         """認証情報なしでの初期化テスト"""
-        automation = OrderAutomation(headless=False)
-        
-        assert automation.headless is False
-        assert automation.email is None
-        assert automation.password is None
+        with pytest.raises(Exception) as exc_info:
+            OrderAutomation(headless=False)
+        assert "ログイン情報が設定されていません" in str(exc_info.value)
     
     @patch('infrastructure.order_automation.sync_playwright')
     def test_start_browser(self, mock_playwright, automation):
@@ -152,13 +150,9 @@ class TestOrderAutomation:
     
     def test_login_without_credentials(self, mocker):
         """認証情報なしでのログインテスト"""
-        automation = OrderAutomation(headless=True)
-        
-        # 例外が発生することを検証
         with pytest.raises(Exception) as exc_info:
-            automation.login()
-        
-        assert 'ログイン情報が設定されていません' in str(exc_info.value)
+            OrderAutomation(headless=True)
+        assert "ログイン情報が設定されていません" in str(exc_info.value)
     
     def test_fill_field_success(self, automation):
         """フィールド入力成功のテスト"""
@@ -253,7 +247,8 @@ class TestOrderAutomation:
     @patch('infrastructure.order_automation.sync_playwright')
     def test_process_orders_without_login(self, mock_playwright):
         """ログイン情報なしでの注文処理テスト"""
-        automation = OrderAutomation(headless=True)
+        with pytest.raises(Exception):
+            OrderAutomation(headless=True)
         
         order_groups = [[{
             'ASIN': 'B001',

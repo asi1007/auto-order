@@ -10,11 +10,11 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 
 
-def validate_config(credentials_file: str, 
-                    yiwupassport_email: str, 
-                    yiwupassport_password: str,
-                    sheet_urls: Optional[List[str]] = None,
-                    sheet_url_names: Optional[List[str]] = None) -> bool:
+def validate_config(
+    credentials_file: str,
+    sheet_urls: Optional[List[str]] = None,
+    sheet_url_names: Optional[List[str]] = None,
+) -> bool:
     if not os.path.exists(credentials_file):
         logger.error("エラー: 認証情報ファイル '%s' が見つかりません", credentials_file)
         logger.error("Google Sheets APIの認証情報を設定してください")
@@ -39,12 +39,6 @@ def validate_config(credentials_file: str,
                 logger.error(".envファイルにシートURLを設定してください")
                 logger.error("詳細はREADME.mdを参照してください")
                 return False
-    
-    if not yiwupassport_email or not yiwupassport_password:
-        logger.error("エラー: イーウーパスポートのログイン情報が設定されていません")
-        logger.error(".envファイルにYIWUPASSPORT_EMAILとYIWUPASSPORT_PASSWORDを設定してください")
-        logger.error("詳細はREADME.mdを参照してください")
-        return False
     
     return True
 

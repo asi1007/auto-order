@@ -3,10 +3,13 @@ Playwrightを使用してイーウーパスポートの注文フォームに自�
 """
 
 from playwright.sync_api import sync_playwright, Page, Browser
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 import time
 import logging
 import re
+import os
+
+from domain.entities.order_group_result import OrderGroupResult
 
 
 class OrderAutomation:
@@ -22,6 +25,16 @@ class OrderAutomation:
         self.pages = []
         self.is_logged_in = False
         self.logger = logging.getLogger(__name__)
+        if not self.email or not self.password:
+            self.logger.error("エラー: イーウーパスポートのログイン情報が設定されていません")
+            self.logger.error(".envファイルにYIWUPASSPORT_EMAILとYIWUPASSPORT_PASSWORDを設定してください")
+            raise Exception("ログイン情報が設定されていません")
+
+    @classmethod
+    def from_env(cls, headless: bool = False) -> "OrderAutomation":
+        email = os.getenv("YIWUPASSPORT_EMAIL")
+        password = os.getenv("YIWUPASSPORT_PASSWORD")
+        return cls(headless=headless, email=email, password=password)
     
     def start_browser(self):
         """ブラウザを起動"""
@@ -186,7 +199,7 @@ class OrderAutomation:
         self.logger.warning(f"  警告: フィールドが見つかりませんでした（値: {value}）")
         return False
     
-    def process_orders(self, order_groups: List[List[Dict]]) -> List[Dict[str, Any]]:
+    def process_orders(self, order_groups: List[List[Dict]]) -> List[OrderGroupResult]:
         if not order_groups:
             self.logger.info("処理する注文がありません")
             return []
@@ -203,27 +216,16 @@ class OrderAutomation:
         total_items = sum(len(group) for group in order_groups)
         self.logger.info(f"{len(order_groups)}グループ（合計{total_items}商品）の注文を処理します...")
 
-        results: List[Dict[str, Any]] = []
+        results: List[OrderGroupResult] = []
         
         for i, order_group in enumerate(order_groups, 1):
             self.logger.info(f"[{i}/{len(order_groups)}] グループ処理中...")
             try:
                 order_number = self.fill_order_form(order_group)
-                results.append(
-                    {
-                        "order_group": order_group,
-                        "order_number": order_number,
-                    }
-                )
+                results.append(OrderGroupResult(order_group=order_group, order_number=order_number))
             except Exception as e:
                 self.logger.warning(f"注文グループの処理をスキップします: {e}")
-                results.append(
-                    {
-                        "order_group": order_group,
-                        "order_number": None,
-                        "error": str(e),
-                    }
-                )
+                results.append(OrderGroupResult(order_group=order_group, order_number=None, error=str(e)))
                 continue
             time.sleep(2)
         

@@ -5,11 +5,8 @@
 from __future__ import annotations
 
 import pandas as pd
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional
 from dataclasses import dataclass
-
-if TYPE_CHECKING:
-    import gspread
 
 @dataclass(frozen=True)
 class PackingMaterialsItem:
@@ -44,18 +41,6 @@ class PackingMaterialsSheet:
     @property
     def items(self) -> List[PackingMaterialsItem]:
         return list(self._items)
-    
-    def to_dataframe(self) -> pd.DataFrame:
-        data = {
-            '資材名称': [item.material_name for item in self._items],
-            'url': [item.url for item in self._items],
-            '商品名': [item.product_name for item in self._items],
-            '詳細': [item.detail for item in self._items],
-            '価格': [item.price for item in self._items],
-            '発注数': [item.order_quantity for item in self._items],
-            'ロットサイズ': [item.lot_size for item in self._items],
-        }
-        return pd.DataFrame(data)
     
     @classmethod
     def _normalize_cell_value(cls, value):
@@ -99,12 +84,12 @@ class PackingMaterialsSheet:
         )
     
     @classmethod
-    def from_sheet(
+    def from_values(
         cls,
-        sheet: "gspread.Worksheet",
+        values: List[List[str]],
         header_row_index: int = 2,
     ) -> "PackingMaterialsSheet":
-        data = sheet.get_all_values()
+        data = values
         assert len(data) >= header_row_index, "ヘッダー行が存在しません"
         headers = data[header_row_index - 1]
         rows = data[header_row_index:]

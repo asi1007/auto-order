@@ -11,9 +11,16 @@ logger = logging.getLogger(__name__)
 
 
 class ChatworkClient:
-    def __init__(self, api_token: str):
+    def __init__(self, api_token: str, default_room_id: str = "397092794"):
         self.api_token = api_token
         self.base_url = "https://api.chatwork.com/v2"
+        self.default_room_id = default_room_id
+
+    @classmethod
+    def from_env(cls) -> "ChatworkClient":
+        api_token = os.getenv("CHATWORK_API_TOKEN", "")
+        room_id = os.getenv("CHATWORK_ROOM_ID", "397092794")
+        return cls(api_token=api_token, default_room_id=room_id)
     
     def post_message(self, room_id: str, message: str, file_id: Optional[int] = None) -> bool:
         if not self.api_token:

@@ -23,36 +23,28 @@ def order_items():
     purchase_url = os.getenv('PURCHASE_SHEET_URL')
     purchase_history_url = os.getenv('PURCHASE_HISTORY_SHEET_URL')
     purchase_history_sheet_name = os.getenv('PURCHASE_HISTORY_SHEET_NAME')
-    yiwupassport_email = os.getenv('YIWUPASSPORT_EMAIL')
-    yiwupassport_password = os.getenv('YIWUPASSPORT_PASSWORD')
     headless = os.getenv('HEADLESS', 'False').lower() == 'true'
-    chatwork_api_token = os.getenv('CHATWORK_API_TOKEN')
-    chatwork_room_id = os.getenv('CHATWORK_ROOM_ID', '397092794')
+    automation = OrderAutomation.from_env(headless=headless)
     
     # 設定の検証
     if not validate_config(
         credentials_file,
-        yiwupassport_email,
-        yiwupassport_password,
         sheet_urls=[sales_url, purchase_url],
         sheet_url_names=['SALES_SHEET_URL', 'PURCHASE_SHEET_URL']
     ):
         return
     
-    chatwork_client = ChatworkClient(chatwork_api_token)
+    chatwork_client = ChatworkClient.from_env()
     
     try:
         order_list = get_order_data(credentials_file, sales_url, purchase_url)
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
         
-        automation = OrderAutomation(headless=headless, email=yiwupassport_email, password=yiwupassport_password)
         results = automation.process_orders(order_groups)
 
         for result in results:
-            order_number = result.get("order_number")
-            group = result.get("order_group", [])
-            for order in group:
-                order["注文番号"] = order_number or ""
+            for order in result.order_group:
+                order["注文番号"] = result.order_number or ""
         
         # 購入履歴を記録
         record_purchase_history(
@@ -70,7 +62,7 @@ def order_items():
                 asin = order.get('ASIN', '')
                 
                 chatwork_client.send_order_notification(
-                    chatwork_room_id,
+                    chatwork_client.default_room_id,
                     chatwork_message,
                     chatwork_attachment,
                     asin

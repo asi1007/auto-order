@@ -7,7 +7,7 @@ Googleシートから梱包材の発注情報を読み込み、イーウーパ�
 import logging
 import os
 from dotenv import load_dotenv
-from domain.repositories.sheets_repository import SheetsRepository
+from infrastructure.repositories.packing_materials_sheet_repository import SheetsPackingMaterialsSheetRepository
 from infrastructure import group_orders_by_url, OrderAutomation, NoOrderDataException, validate_config, record_purchase_history
 
 
@@ -43,8 +43,8 @@ def get_packing_materials_order_data(credentials_file: str, packing_materials_ur
     assert packing_materials_url, "packing_materials_urlは必須です"
     
     logger.info("[ステップ1] Googleシートから梱包材発注データを読み込んでいます...")
-    repository = SheetsRepository(credentials_file)
-    packing_materials_sheet = repository.read_packing_materials_sheet(packing_materials_url, sheet_name)
+    repository = SheetsPackingMaterialsSheetRepository(credentials_file)
+    packing_materials_sheet = repository.read(packing_materials_url, sheet_name or "使用資材")
     assert packing_materials_sheet is not None, "packing_materials_sheetはNoneであってはなりません"
     
     order_list = []
@@ -100,13 +100,15 @@ def order_packing_materials():
     packing_materials_url = os.getenv('PACKING_MATERIALS_SHEET_URL')
     purchase_history_url = os.getenv('PURCHASE_HISTORY_SHEET_URL')
     purchase_history_sheet_name = os.getenv('PURCHASE_HISTORY_SHEET_NAME')
-    yiwupassport_email = os.getenv('YIWUPASSPORT_EMAIL')
-    yiwupassport_password = os.getenv('YIWUPASSPORT_PASSWORD')
     headless = os.getenv('HEADLESS', 'False').lower() == 'true'
     packing_materials_sheet_name = os.getenv('PACKING_MATERIALS_SHEET_NAME')
+    automation = OrderAutomation.from_env(headless=headless)
     
     if not validate_config(
-        credentials_file,yiwupassport_email,yiwupassport_password,sheet_urls=[packing_materials_url], sheet_url_names=['PACKING_MATERIALS_SHEET_URL']):
+        credentials_file,
+        sheet_urls=[packing_materials_url],
+        sheet_url_names=['PACKING_MATERIALS_SHEET_URL'],
+    ):
         return
     
     
@@ -117,14 +119,11 @@ def order_packing_materials():
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
         assert order_groups, "order_groupsは空であってはなりません"
         
-        automation = OrderAutomation(headless=headless, email=yiwupassport_email, password=yiwupassport_password)
         results = automation.process_orders(order_groups)
 
         for result in results:
-            order_number = result.get("order_number")
-            group = result.get("order_group", [])
-            for order in group:
-                order["注文番号"] = order_number or ""
+            for order in result.order_group:
+                order["注文番号"] = result.order_number or ""
         
         # 購入履歴を記録
         record_purchase_history(
