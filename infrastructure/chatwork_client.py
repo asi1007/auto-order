@@ -4,10 +4,14 @@ Chatwork APIクライアント
 
 import requests
 from typing import Optional
+from typing import TYPE_CHECKING
 import logging
 import os
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from domain.entities.order import Order
 
 
 class ChatworkClient:
@@ -90,6 +94,24 @@ class ChatworkClient:
             return success
         
         return False
+
+    def send_notifications_for_order_groups(self, order_groups: list[list["Order"]]) -> None:
+        for group in order_groups:
+            for order in group:
+                chatwork_message = str(order.chatwork_message).strip()
+                chatwork_attachment = str(order.chatwork_attachment).strip()
+                asin = str(order.asin).strip()
+
+                # chatwork文章とchatwork添付がある場合のみ通知
+                if not chatwork_message and not chatwork_attachment:
+                    continue
+
+                self.send_order_notification(
+                    self.default_room_id,
+                    chatwork_message,
+                    chatwork_attachment,
+                    asin,
+                )
 
 
 

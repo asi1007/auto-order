@@ -3,13 +3,14 @@ Playwrightを使用してイーウーパスポートの注文フォームに自�
 """
 
 from playwright.sync_api import sync_playwright, Page, Browser
-from typing import List, Dict, Optional
+from typing import List, Optional
 import time
 import logging
 import re
 import os
 
-from domain.entities.order_group_result import OrderGroupResult
+from domain.entities.order_group import OrderGroup
+from domain.entities.order import Order
 
 
 class OrderAutomation:
@@ -101,7 +102,7 @@ class OrderAutomation:
         except Exception as e:
             raise Exception(f"ログイン処理中にエラーが発生しました: {e}")
     
-    def fill_order_form(self, order_group: List[Dict]):
+    def fill_order_form(self, order_group: List[Order]):
         try:
             page = self.context.new_page()
             self.pages.append(page)
@@ -117,17 +118,22 @@ class OrderAutomation:
             self.logger.error(f"✗ 注文グループの入力中にエラーが発生しました: {e}")
             raise
     
-    def _fill_order_items(self, page: Page, order_group: List[Dict]):
+    def _fill_order_items(self, page: Page, order_group: List[Order]):
         for idx, order_info in enumerate(order_group, 1):
-            item_identifier = order_info.get('ASIN', order_info.get('商品名', f'商品{idx}'))
-            self.logger.info(f"  商品{idx}: {item_identifier} を入力中...")
-            self._fill_field(page, order_info['商品名'], [f'input[name="item_name{idx}"]'])
-            self._fill_field(page, order_info['購入先URL'], [f'input[name="item_url{idx}"]'])
-            self._fill_field(page, str(order_info['発注数']), [f'input[name="item_lot{idx}"]'])
-            if order_info.get('色・サイズ等指定'):
-                self._fill_field(page, order_info['色・サイズ等指定'], [f'textarea[name="item_size{idx}"]'])
-            if order_info.get('単価'):
-                self._fill_field(page, str(order_info['単価']), [f'input[name="item_price{idx}"]'])
+            item_identifier = order_info.asin or order_info.product_name or f"商品{idx}"
+            self.logger.info(
+                "  商品%s: %s を入力中...（数量: %s）",
+                idx,
+                item_identifier,
+                order_info.order_quantity,
+            )
+            self._fill_field(page, order_info.product_name, [f'input[name="item_name{idx}"]'])
+            self._fill_field(page, order_info.purchase_url, [f'input[name="item_url{idx}"]'])
+            self._fill_field(page, str(order_info.order_quantity), [f'input[name="item_lot{idx}"]'])
+            if order_info.color_size_spec:
+                self._fill_field(page, order_info.color_size_spec, [f'textarea[name="item_size{idx}"]'])
+            if order_info.unit_price_for_form:
+                self._fill_field(page, order_info.unit_price_for_form, [f'input[name="item_price{idx}"]'])
         self.logger.info(f"✓ {len(order_group)}商品の入力が完了しました")
     
     def _confirm_and_submit_order(self, page: Page) -> Optional[str]:
@@ -136,12 +142,10 @@ class OrderAutomation:
             confirm_button_selector = '#btn-confirm'
             page.wait_for_selector(confirm_button_selector, state='visible', timeout=10000)
             page.click(confirm_button_selector)
-            self.logger.info("    ✓ 注文確認ボタンをクリックしました")
             
             # モーダルが表示されるまで待機
             modal_selector = '#modal-confirm'
             page.wait_for_selector(modal_selector, state='visible', timeout=10000)
-            self.logger.info("    ✓ 確認モーダルが表示されました")
             time.sleep(1)
             
             # 「上記の内容で登録する」ボタンをクリック
@@ -199,7 +203,7 @@ class OrderAutomation:
         self.logger.warning(f"  警告: フィールドが見つかりませんでした（値: {value}）")
         return False
     
-    def process_orders(self, order_groups: List[List[Dict]]) -> List[OrderGroupResult]:
+    def process_orders(self, order_groups: List[List[Order]]) -> List[OrderGroup]:
         if not order_groups:
             self.logger.info("処理する注文がありません")
             return []
@@ -216,16 +220,16 @@ class OrderAutomation:
         total_items = sum(len(group) for group in order_groups)
         self.logger.info(f"{len(order_groups)}グループ（合計{total_items}商品）の注文を処理します...")
 
-        results: List[OrderGroupResult] = []
+        results: List[OrderGroup] = []
         
         for i, order_group in enumerate(order_groups, 1):
             self.logger.info(f"[{i}/{len(order_groups)}] グループ処理中...")
             try:
                 order_number = self.fill_order_form(order_group)
-                results.append(OrderGroupResult(order_group=order_group, order_number=order_number))
+                results.append(OrderGroup(order_group=order_group, order_number=order_number))
             except Exception as e:
                 self.logger.warning(f"注文グループの処理をスキップします: {e}")
-                results.append(OrderGroupResult(order_group=order_group, order_number=None, error=str(e)))
+                results.append(OrderGroup(order_group=order_group, order_number=None, error=str(e)))
                 continue
             time.sleep(2)
         

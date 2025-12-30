@@ -1,136 +1,18 @@
-"""
-Googleシートから発注情報を読み込むモジュール
-"""
+from __future__ import annotations
 
-import pandas as pd
-from typing import List, Dict
-from infrastructure.repositories import (
-    BaseSheetsRepository,
-    SheetsSalesSheetRepository,
-    SheetsPurchaseInfoSheetRepository,
-)
-from domain.services.order_merge_service import OrderMergeService
+from domain.entities.order import Order
+
+from infrastructure.repositories import BaseSheetsRepository, SheetsPurchaseInfoSheetRepository, SheetsSalesSheetRepository
+from usecases.get_order_data_usecase import GetOrderDataUseCase
+from usecases.exceptions import NoOrderDataException
+from usecases.group_orders_by_url import group_orders_by_url
 
 
-class NoOrderDataException(Exception):
-    pass
-
-
-class SheetsReader:
-    def __init__(self, credentials_file: str):
-        self.credentials_file = credentials_file
-        base = BaseSheetsRepository(credentials_file)
-        self._sales_repository = SheetsSalesSheetRepository(credentials_file, client=base.client)
-        self._purchase_repository = SheetsPurchaseInfoSheetRepository(credentials_file, client=base.client)
-        self._merge_service = OrderMergeService()
-    
-    @property
-    def client(self):
-        return self._sales_repository.client
-    
-    def read_sales_sheet(self, sheet_url: str, sheet_name: str = "売上/日") -> pd.DataFrame:
-        sales_sheet = self._sales_repository.read(sheet_url, sheet_name)
-        return sales_sheet.to_dataframe()
-    
-    def read_purchase_sheet(self, sheet_url: str, sheet_name: str = "仕入情報") -> pd.DataFrame:
-        purchase_info_sheet = self._purchase_repository.read(sheet_url, sheet_name)
-        return purchase_info_sheet.to_dataframe()
-    
-    def merge_data(self, sales_df: pd.DataFrame, purchase_df: pd.DataFrame) -> List[Dict]:
-        from domain.value_objects.sales_sheet import SalesSheet
-        from domain.value_objects.purchase_info_sheet import PurchaseInfoSheet
-        
-        # DataFrameからValueObjectに変換
-        sales_sheet = SalesSheet.from_dataframe(sales_df)
-        purchase_info_sheet = PurchaseInfoSheet.from_dataframe(purchase_df)
-        
-        # Serviceを使ってマージ
-        return self._merge_service.merge(sales_sheet, purchase_info_sheet)
-
-    def get_order_data(self, sales_url: str, purchase_url: str) -> List[Dict]:
-        import logging
-
-        logger = logging.getLogger(__name__)
-        logger.info("[ステップ1] Googleシートから発注データを読み込んでいます...")
-
-        sales_df = self.read_sales_sheet(sales_url)
-        purchase_df = self.read_purchase_sheet(purchase_url)
-
-        order_list = self.merge_data(sales_df, purchase_df)
-        if not order_list:
-            logger.info("処理する発注データがありません")
-            raise NoOrderDataException("処理する発注データがありません")
-
-        return order_list
-
-
-def group_orders_by_url(order_list: List[Dict], max_items_per_group: int = 5) -> List[List[Dict]]:
-    import logging
-    from collections import defaultdict
-    
-    logger = logging.getLogger(__name__)
-    logger.info("[ステップ2] 購入先URLごとにグループ化しています...")
-    logger.info("-" * 60)
-    
-    # 購入先URLごとにグループ化（URLを正規化）
-    url_groups = defaultdict(list)
-    for order in order_list:
-        # URLを正規化（前後の空白を削除、末尾のスラッシュを削除）
-        normalized_url = order['購入先URL'].strip().rstrip('/')
-        url_groups[normalized_url].append(order)
-    
-    # デバッグ情報: URL別の商品数を表示
-    for url, orders in url_groups.items():
-        logger.info(f"  {url}: {len(orders)}商品")
-    
-    # 各グループを最大商品数ごとに分割
-    grouped_orders = []
-    for url, orders in url_groups.items():
-        # 最大商品数ごとに分割
-        for i in range(0, len(orders), max_items_per_group):
-            group = orders[i:i + max_items_per_group]
-            grouped_orders.append(group)
-    
-    total_groups = len(grouped_orders)
-    total_items = sum(len(group) for group in grouped_orders)
-    logger.info(f"✓ {total_items}件の商品を{total_groups}グループにまとめました")
-    
-    # グループの詳細を表示
-    for i, group in enumerate(grouped_orders, 1):
-        url = group[0]['購入先URL']
-        logger.info(f"  グループ{i}: {url} ({len(group)}商品)")
-    
-    # 発注データの確認
-    logger.info("[発注データ一覧]")
-    logger.info("-" * 60)
-    for i, group in enumerate(grouped_orders, 1):
-        logger.info("グループ%s: %s", i, group[0]["購入先URL"])
-        for j, order in enumerate(group, 1):
-            logger.info(
-                "  商品%s: %s (ASIN: %s)",
-                j,
-                order["商品名"],
-                order["ASIN"],
-            )
-            logger.info(
-                "         発注数: %s, 単価: %s",
-                order["発注数"],
-                order["単価"],
-            )
-    
-    # ユーザーに確認
-    logger.info("")
-    logger.info(
-        "%sグループ（合計%s商品）の注文を処理します...",
-        total_groups,
-        total_items,
+def get_order_data(credentials_file: str, sales_url: str, purchase_url: str) -> list[Order]:
+    base = BaseSheetsRepository(credentials_file)
+    usecase = GetOrderDataUseCase(
+        sales_repository=SheetsSalesSheetRepository(credentials_file, client=base.client),
+        purchase_info_repository=SheetsPurchaseInfoSheetRepository(credentials_file, client=base.client),
     )
-    logger.info("処理を開始します")
-    
-    return grouped_orders
-
-
-def get_order_data(credentials_file: str, sales_url: str, purchase_url: str) -> List[Dict]:
-    reader = SheetsReader(credentials_file)
-    return reader.get_order_data(sales_url=sales_url, purchase_url=purchase_url)
+    return usecase.execute(sales_url=sales_url, purchase_url=purchase_url)
 

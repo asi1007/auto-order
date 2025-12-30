@@ -9,33 +9,34 @@ import os
 from dotenv import load_dotenv
 from infrastructure.repositories.packing_materials_sheet_repository import SheetsPackingMaterialsSheetRepository
 from infrastructure import group_orders_by_url, OrderAutomation, NoOrderDataException, validate_config, record_purchase_history
+from domain.entities.order import Order
 
 
 logger = logging.getLogger(__name__)
 
 
-def convert_packing_materials_to_order_format(packing_materials_item) -> dict:
+def convert_packing_materials_to_order_format(packing_materials_item) -> Order:
     assert packing_materials_item is not None, "packing_materials_itemはNoneであってはなりません"
     assert packing_materials_item.material_name, "資材名称は必須です"
     assert packing_materials_item.product_name, "商品名は必須です"
     assert packing_materials_item.url, "URLは必須です"
     assert packing_materials_item.order_quantity > 0, "発注数は0より大きい必要があります"
     
-    return {
-        'ASIN': packing_materials_item.material_name,
-        '資材名称': packing_materials_item.material_name,
-        '商品名': packing_materials_item.product_name,
-        '購入先URL': packing_materials_item.url,
-        '色・サイズ等指定': packing_materials_item.detail,
-        '発注数': packing_materials_item.order_quantity,
-        'ロットサイズ': packing_materials_item.lot_size,
-        '単価': packing_materials_item.price if packing_materials_item.price > 0 else '',
-        'chatwork文章': '',
-        'chatwork添付': ''
-    }
+    return Order(
+        asin=str(packing_materials_item.material_name),
+        material_name=str(packing_materials_item.material_name),
+        product_name=str(packing_materials_item.product_name),
+        purchase_url=str(packing_materials_item.url),
+        color_size_spec=str(packing_materials_item.detail),
+        order_quantity=int(packing_materials_item.order_quantity),
+        lot_size=int(packing_materials_item.lot_size),
+        unit_price=float(packing_materials_item.price) if packing_materials_item.price and packing_materials_item.price > 0 else None,
+        chatwork_message="",
+        chatwork_attachment="",
+    )
 
 
-def get_packing_materials_order_data(credentials_file: str, packing_materials_url: str, sheet_name: str = None):
+def get_packing_materials_order_data(credentials_file: str, packing_materials_url: str, sheet_name: str = None) -> list[Order]:
     import logging
     logger = logging.getLogger(__name__)
     
@@ -47,7 +48,7 @@ def get_packing_materials_order_data(credentials_file: str, packing_materials_ur
     packing_materials_sheet = repository.read(packing_materials_url, sheet_name or "使用資材")
     assert packing_materials_sheet is not None, "packing_materials_sheetはNoneであってはなりません"
     
-    order_list = []
+    order_list: list[Order] = []
     for item in packing_materials_sheet.items:
         assert item.order_quantity >= 0, f"発注数は0以上である必要があります（商品: {item.product_name}）"
         if item.order_quantity > 0:
@@ -65,29 +66,28 @@ def get_packing_materials_order_data(credentials_file: str, packing_materials_ur
     logger.info("[発注データ一覧]")
     logger.info("-" * 60)
     for i, order in enumerate(order_list, 1):
-        assert "商品名" in order, f"order[{i}]に商品名がありません"
-        assert "購入先URL" in order, f"order[{i}]に購入先URLがありません"
-        assert "発注数" in order, f"order[{i}]に発注数がありません"
-        assert order["発注数"] > 0, f"order[{i}]の発注数は0より大きい必要があります"
+        assert order.product_name, f"order[{i}]に商品名がありません"
+        assert order.purchase_url, f"order[{i}]に購入先URLがありません"
+        assert order.order_quantity > 0, f"order[{i}]の発注数は0より大きい必要があります"
         
         logger.info(
             "  商品%s: %s",
             i,
-            order["商品名"],
+            order.product_name,
         )
         logger.info(
             "         URL: %s",
-            order["購入先URL"],
+            order.purchase_url,
         )
         logger.info(
             "         発注数: %s, 単価: %s",
-            order["発注数"],
-            order["単価"],
+            order.order_quantity,
+            order.unit_price_for_form,
         )
-        if order["色・サイズ等指定"]:
+        if order.color_size_spec:
             logger.info(
                 "         詳細: %s",
-                order["色・サイズ等指定"],
+                order.color_size_spec,
             )
     
     return order_list
@@ -120,16 +120,12 @@ def order_packing_materials():
         assert order_groups, "order_groupsは空であってはなりません"
         
         results = automation.process_orders(order_groups)
-
-        for result in results:
-            for order in result.order_group:
-                order["注文番号"] = result.order_number or ""
         
         # 購入履歴を記録
         record_purchase_history(
             credentials_file,
             purchase_history_url,
-            order_groups,
+            results,
             purchase_history_sheet_name
         )
         

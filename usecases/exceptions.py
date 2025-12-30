@@ -1,0 +1,3 @@
+class NoOrderDataException(Exception):
+    pass
+

@@ -5,6 +5,7 @@ order_automation.pyのテストコード
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 from infrastructure.order_automation import OrderAutomation
+from domain.entities.order import Order
 
 
 class TestOrderAutomation:
@@ -13,14 +14,14 @@ class TestOrderAutomation:
     @pytest.fixture
     def order_info(self):
         """テスト用の注文情報"""
-        return {
-            'ASIN': 'B001TEST',
-            '商品名': 'テスト商品',
-            '購入先URL': 'http://test.com/product',
-            '色・サイズ等指定': 'Red/Large',
-            '発注数': 10,
-            '単価': 1500
-        }
+        return Order(
+            asin="B001TEST",
+            product_name="テスト商品",
+            purchase_url="http://test.com/product",
+            color_size_spec="Red/Large",
+            order_quantity=10,
+            unit_price=1500,
+        )
     
     @pytest.fixture
     def automation(self):
@@ -229,12 +230,9 @@ class TestOrderAutomation:
         
         # 3商品のグループ
         order_group = [
-            {'ASIN': 'B001', '商品名': '商品1', '購入先URL': 'http://test.com', 
-             '色・サイズ等指定': 'Red', '発注数': 10, '単価': 100},
-            {'ASIN': 'B002', '商品名': '商品2', '購入先URL': 'http://test.com', 
-             '色・サイズ等指定': 'Blue', '発注数': 20, '単価': 200},
-            {'ASIN': 'B003', '商品名': '商品3', '購入先URL': 'http://test.com', 
-             '色・サイズ等指定': 'Green', '発注数': 30, '単価': 300},
+            Order(asin="B001", product_name="商品1", purchase_url="http://test.com", color_size_spec="Red", order_quantity=10, unit_price=100),
+            Order(asin="B002", product_name="商品2", purchase_url="http://test.com", color_size_spec="Blue", order_quantity=20, unit_price=200),
+            Order(asin="B003", product_name="商品3", purchase_url="http://test.com", color_size_spec="Green", order_quantity=30, unit_price=300),
         ]
         
         # テスト実行
@@ -250,14 +248,7 @@ class TestOrderAutomation:
         with pytest.raises(Exception):
             OrderAutomation(headless=True)
         
-        order_groups = [[{
-            'ASIN': 'B001',
-            '商品名': 'テスト',
-            '購入先URL': 'http://test.com',
-            '色・サイズ等指定': '',
-            '発注数': 1,
-            '単価': 100
-        }]]
+        order_groups = [[Order(asin="B001", product_name="テスト", purchase_url="http://test.com", color_size_spec="", order_quantity=1, unit_price=100)]]
         
         # モックの設定
         mock_playwright_instance = MagicMock()
@@ -278,19 +269,18 @@ class TestOrderAutomationIntegration:
     
     def test_order_data_structure(self):
         """注文データ構造のテスト"""
-        order_info = {
-            'ASIN': 'B001TEST',
-            '商品名': 'テスト商品',
-            '購入先URL': 'http://example.com',
-            '色・サイズ等指定': 'Red',
-            '発注数': 5,
-            '単価': 1000
-        }
+        order_info = Order(
+            asin="B001TEST",
+            product_name="テスト商品",
+            purchase_url="http://example.com",
+            color_size_spec="Red",
+            order_quantity=5,
+            unit_price=1000,
+        )
         
         # 必須フィールドの確認
-        assert 'ASIN' in order_info
-        assert '商品名' in order_info
-        assert '購入先URL' in order_info
-        assert '発注数' in order_info
-        assert isinstance(order_info['発注数'], int)
+        assert order_info.asin
+        assert order_info.product_name
+        assert order_info.purchase_url
+        assert isinstance(order_info.order_quantity, int)
 

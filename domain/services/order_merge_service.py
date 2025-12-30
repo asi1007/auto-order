@@ -2,7 +2,7 @@
 発注情報をマージするService
 """
 
-from typing import List, Dict
+from domain.entities.order import Order
 from domain.value_objects.sales_sheet import SalesSheet
 from domain.value_objects.purchase_info_sheet import PurchaseInfoSheet
 
@@ -10,8 +10,8 @@ from domain.value_objects.purchase_info_sheet import PurchaseInfoSheet
 class OrderMergeService:
     MINIMUM_ORDER_QUANTITY = 10
     
-    def merge(self, sales_sheet: SalesSheet, purchase_info_sheet: PurchaseInfoSheet) -> List[Dict]:
-        order_list = []
+    def merge(self, sales_sheet: SalesSheet, purchase_info_sheet: PurchaseInfoSheet) -> list[Order]:
+        order_list: list[Order] = []
         
         # ASINでマージ
         for sales_item in sales_sheet.items:
@@ -32,22 +32,30 @@ class OrderMergeService:
                 # 発注数に応じて最適な価格を選択
                 selected_price = purchase_item.get_best_price(final_order_quantity)
                 
-                order_info = {
-                    'ASIN': sales_item.asin,
-                    '商品名': purchase_item.title,
-                    '購入先URL': purchase_item.purchase_url,
-                    '色・サイズ等指定': purchase_item.color_size_spec,
-                    '発注数': int(final_order_quantity),
-                    '単価': selected_price if selected_price > 0 else (purchase_item.unit_price if purchase_item.unit_price > 0 else ''),
-                    'chatwork文章': purchase_item.chatwork_message,
-                    'chatwork添付': purchase_item.chatwork_attachment
-                }
-                order_list.append(order_info)
+                resolved_unit_price: float | None
+                if selected_price and selected_price > 0:
+                    resolved_unit_price = float(selected_price)
+                elif purchase_item.unit_price and purchase_item.unit_price > 0:
+                    resolved_unit_price = float(purchase_item.unit_price)
+                else:
+                    resolved_unit_price = None
+
+                order = Order(
+                    asin=sales_item.asin,
+                    product_name=purchase_item.title,
+                    purchase_url=purchase_item.purchase_url,
+                    color_size_spec=purchase_item.color_size_spec,
+                    order_quantity=int(final_order_quantity),
+                    unit_price=resolved_unit_price,
+                    chatwork_message=purchase_item.chatwork_message,
+                    chatwork_attachment=purchase_item.chatwork_attachment,
+                )
+                order_list.append(order)
         
         # 紐付けできなかったASINを表示
         sales_asins = set(sales_sheet.asins)
         purchase_asins = set(purchase_info_sheet.asins)
-        merged_asins = {item['ASIN'] for item in order_list}
+        merged_asins = {item.asin for item in order_list}
         
         unmatched_sales = sales_asins - merged_asins
         if unmatched_sales:

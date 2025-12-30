@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
+
+from domain.entities.order import Order
 
 
 @dataclass(frozen=True)
-class OrderGroupResult:
-    order_group: list[dict[str, Any]]
+class OrderGroup:
+    order_group: list[Order]
     order_number: Optional[str]
     error: Optional[str] = None
 
