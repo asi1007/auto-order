@@ -34,6 +34,7 @@ def _to_purchase_management_item(order: Order, *, order_number: str) -> Purchase
         url=order.purchase_url,
         detail=order.color_size_spec,
         image_text=order.image_text,
+        remark_text=order.remark_text,
         quantity=quantity,
         unit_price=unit_price,
         total_price=total_price,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from typing import Any
 
 from domain.value_objects.purchase_management import PurchaseManagementItem
@@ -50,6 +49,7 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
             "購入先": item.url,
             "購入先URL": item.url,
             "画像": item.image_text,
+            "備考": item.remark_text,
             "詳細": item.detail,
             "色": item.detail,
             "サイズ": item.detail,

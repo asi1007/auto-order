@@ -9,10 +9,10 @@ def test_sales_sheet_repository_read_success():
     mock_worksheet = Mock()
     mock_worksheet.get_all_values.return_value = [
         ["1行目（無視）"],
-        ["ASIN", "商品名", "画像", "発注数"],
-        ["B001", "売上の商品1", "img1", "10"],
-        ["B002", "売上の商品2", "img2", "20"],
-        ["B003", "売上の商品3", "", "15"],
+        ["ASIN", "商品名", "画像", "備考", "発注数"],
+        ["B001", "売上の商品1", "img1", "memo1", "10"],
+        ["B002", "売上の商品2", "img2", "memo2", "20"],
+        ["B003", "売上の商品3", "", "", "15"],
     ]
 
     mock_spreadsheet = Mock()
@@ -29,6 +29,7 @@ def test_sales_sheet_repository_read_success():
     assert sheet.items[0].order_quantity == 10
     assert sheet.items[0].product_name == "売上の商品1"
     assert sheet.items[0].image_text == "img1"
+    assert sheet.items[0].remark_text == "memo1"
 
 
 def test_sales_sheet_repository_read_empty_data_raises():

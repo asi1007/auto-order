@@ -15,6 +15,7 @@ class Order:
     chatwork_message: str = ""
     chatwork_attachment: str = ""
     image_text: str = ""
+    remark_text: str = ""
     material_name: str = ""
     lot_size: int = 1
 

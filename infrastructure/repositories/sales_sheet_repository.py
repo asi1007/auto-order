@@ -23,6 +23,7 @@ class SheetsSalesSheetRepository(BaseSheetsRepository):
         col_qty = None
         col_name = None
         col_image = None
+        col_remark = None
         for col in df.columns:
             col_str = str(col).strip()
             if col_asin is None and "ASIN" in col_str:
@@ -33,6 +34,8 @@ class SheetsSalesSheetRepository(BaseSheetsRepository):
                 col_name = col
             if col_image is None and "画像" in col_str:
                 col_image = col
+            if col_remark is None and "備考" in col_str:
+                col_remark = col
 
         if col_asin is None:
             col_asin = df.columns[0]
@@ -44,6 +47,8 @@ class SheetsSalesSheetRepository(BaseSheetsRepository):
             columns["商品名"] = col_name
         if col_image is not None:
             columns["画像"] = col_image
+        if col_remark is not None:
+            columns["備考"] = col_remark
 
         df_filtered = df[list(columns.values())].copy()
         df_filtered.columns = list(columns.keys())

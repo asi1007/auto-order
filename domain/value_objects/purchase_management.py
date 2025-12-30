@@ -17,6 +17,7 @@ class PurchaseManagementItem:
     detail: str
     quantity: int
     image_text: str = ""
+    remark_text: str = ""
     unit_price: float | None = None
     total_price: float | None = None
     material_name: str = ""

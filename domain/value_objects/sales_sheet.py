@@ -13,6 +13,7 @@ class SalesItem:
     order_quantity: int
     product_name: str = ""
     image_text: str = ""
+    remark_text: str = ""
     
     def __post_init__(self):
         if not self.asin or not self.asin.strip():
@@ -44,6 +45,7 @@ class SalesSheet:
             'ASIN': [item.asin for item in self._items],
             '商品名': [item.product_name for item in self._items],
             '画像': [item.image_text for item in self._items],
+            '備考': [item.remark_text for item in self._items],
             '発注数': [item.order_quantity for item in self._items],
         }
         return pd.DataFrame(data)
@@ -56,6 +58,7 @@ class SalesSheet:
             order_quantity = int(row['発注数'])
             product_name = str(row['商品名']).strip() if '商品名' in df.columns and pd.notna(row.get('商品名')) else ""
             image_text = str(row['画像']).strip() if '画像' in df.columns and pd.notna(row.get('画像')) else ""
+            remark_text = str(row['備考']).strip() if '備考' in df.columns and pd.notna(row.get('備考')) else ""
             if asin:  # 空行はスキップ
                 items.append(
                     SalesItem(
@@ -63,6 +66,7 @@ class SalesSheet:
                         order_quantity=order_quantity,
                         product_name=product_name,
                         image_text=image_text,
+                        remark_text=remark_text,
                     )
                 )
         return cls(items=items)

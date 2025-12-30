@@ -51,6 +51,7 @@ class OrderMergeService:
                     chatwork_message=purchase_item.chatwork_message,
                     chatwork_attachment=purchase_item.chatwork_attachment,
                     image_text=sales_item.image_text,
+                    remark_text=sales_item.remark_text,
                 )
                 order_list.append(order)
         
