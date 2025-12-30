@@ -3,7 +3,7 @@
 """
 
 import pandas as pd
-from typing import Dict, List
+from typing import List
 from dataclasses import dataclass
 
 
@@ -11,6 +11,8 @@ from dataclasses import dataclass
 class SalesItem:
     asin: str
     order_quantity: int
+    product_name: str = ""
+    image_text: str = ""
     
     def __post_init__(self):
         if not self.asin or not self.asin.strip():
@@ -40,7 +42,9 @@ class SalesSheet:
     def to_dataframe(self) -> pd.DataFrame:
         data = {
             'ASIN': [item.asin for item in self._items],
-            '発注数': [item.order_quantity for item in self._items]
+            '商品名': [item.product_name for item in self._items],
+            '画像': [item.image_text for item in self._items],
+            '発注数': [item.order_quantity for item in self._items],
         }
         return pd.DataFrame(data)
     
@@ -50,8 +54,17 @@ class SalesSheet:
         for _, row in df.iterrows():
             asin = str(row['ASIN']).strip()
             order_quantity = int(row['発注数'])
+            product_name = str(row['商品名']).strip() if '商品名' in df.columns and pd.notna(row.get('商品名')) else ""
+            image_text = str(row['画像']).strip() if '画像' in df.columns and pd.notna(row.get('画像')) else ""
             if asin:  # 空行はスキップ
-                items.append(SalesItem(asin=asin, order_quantity=order_quantity))
+                items.append(
+                    SalesItem(
+                        asin=asin,
+                        order_quantity=order_quantity,
+                        product_name=product_name,
+                        image_text=image_text,
+                    )
+                )
         return cls(items=items)
     
     def __len__(self) -> int:

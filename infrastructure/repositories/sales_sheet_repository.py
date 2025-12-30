@@ -18,8 +18,35 @@ class SheetsSalesSheetRepository(BaseSheetsRepository):
         if len(df.columns) < 2:
             raise Exception(f"シートの列数が不足しています。必要: 2列以上, 実際: {len(df.columns)}列")
 
-        df_filtered = df.iloc[:, [0, 1]].copy()
-        df_filtered.columns = ["ASIN", "発注数"]
+        # ヘッダー名から列を特定（無ければ従来通り先頭列を使う）
+        col_asin = None
+        col_qty = None
+        col_name = None
+        col_image = None
+        for col in df.columns:
+            col_str = str(col).strip()
+            if col_asin is None and "ASIN" in col_str:
+                col_asin = col
+            if col_qty is None and ("発注数" in col_str or "注文数" in col_str):
+                col_qty = col
+            if col_name is None and ("商品名" in col_str or "題名" in col_str):
+                col_name = col
+            if col_image is None and "画像" in col_str:
+                col_image = col
+
+        if col_asin is None:
+            col_asin = df.columns[0]
+        if col_qty is None:
+            col_qty = df.columns[1]
+
+        columns = {"ASIN": col_asin, "発注数": col_qty}
+        if col_name is not None:
+            columns["商品名"] = col_name
+        if col_image is not None:
+            columns["画像"] = col_image
+
+        df_filtered = df[list(columns.values())].copy()
+        df_filtered.columns = list(columns.keys())
 
         df_filtered = df_filtered[df_filtered["ASIN"].astype(str).str.strip() != ""]
         df_filtered["発注数"] = pd.to_numeric(df_filtered["発注数"], errors="coerce")

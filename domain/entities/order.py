@@ -9,10 +9,12 @@ class Order:
     product_name: str
     purchase_url: str
     order_quantity: int
+    sales_product_name: str = ""
     color_size_spec: str = ""
     unit_price: float | None = None
     chatwork_message: str = ""
     chatwork_attachment: str = ""
+    image_text: str = ""
     material_name: str = ""
     lot_size: int = 1
 

@@ -9,6 +9,7 @@ from infrastructure.repositories import BaseSheetsRepository, SheetsPurchaseHist
 from domain.entities.order_group import OrderGroup
 from domain.entities.order import Order
 from domain.value_objects.purchase_history import PurchaseHistoryItem
+from infrastructure.order_group_recording import append_items_from_order_groups
 
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def record_purchase_history(
     credentials_file: str,
     history_sheet_url: str,
     order_groups: List[OrderGroup],
-    sheet_name: str = None
+    sheet_name: str 
 ) -> None:
     assert credentials_file, "credentials_fileは必須です"
     assert order_groups is not None, "order_groupsはNoneであってはなりません"
@@ -58,24 +59,22 @@ def record_purchase_history(
         logger.info("[ステップ4] 購入履歴を記録しています...")
         base = BaseSheetsRepository(credentials_file)
         repository = SheetsPurchaseHistoryRepository(
-            credentials_file=credentials_file,
-            sheet_url=history_sheet_url,
-            sheet_name=sheet_name or "使用資材",
-            client=base.client,
+            credentials_file,
+            history_sheet_url,
+            sheet_name,
+            base.client,
         )
-        total_recorded = 0
-        for result in order_groups:
-            for order in result.order_group:
-                assert order is not None, "orderはNoneであってはなりません"
-                try:
-                    history_item = convert_order_to_history_item(order, order_number=result.order_number or "")
-                    repository.append(history_item)
-                    total_recorded += 1
-                except Exception as e:
-                    logger.warning(f"購入履歴の記録に失敗しました（商品: {getattr(order, 'product_name', '不明')}）: {e}")
-                    continue
+        total_recorded = append_items_from_order_groups(
+            order_groups=order_groups,
+            to_item=lambda order, order_number: convert_order_to_history_item(order, order_number=order_number),
+            append=repository.append,
+            on_error=lambda order, e: logger.warning(
+                "購入履歴の記録に失敗しました（商品: %s）: %s",
+                getattr(order, "product_name", "不明"),
+                e,
+            ),
+        )
         
-        assert total_recorded >= 0, "total_recordedは0以上である必要があります"
         logger.info(f"✓ {total_recorded}件の購入履歴を記録しました")
         
     except Exception as e:

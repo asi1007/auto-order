@@ -46,9 +46,10 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
             "発注番号": item.order_number,
             "ASIN": item.asin,
             "商品名": item.product_name,
+            # URLは「購入先」列にのみ入れる
+            "購入先": item.url,
             "購入先URL": item.url,
-            "URL": item.url,
-            "リンク": item.url,
+            "画像": item.image_text,
             "詳細": item.detail,
             "色": item.detail,
             "サイズ": item.detail,

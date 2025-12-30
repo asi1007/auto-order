@@ -10,6 +10,7 @@ from datetime import datetime
 from domain.entities.order_group import OrderGroup
 from domain.entities.order import Order
 from domain.value_objects.purchase_management import PurchaseManagementItem
+from infrastructure.order_group_recording import append_items_from_order_groups
 from infrastructure.repositories import BaseSheetsRepository, SheetsPurchaseManagementRepository
 
 
@@ -28,9 +29,11 @@ def _to_purchase_management_item(order: Order, *, order_number: str) -> Purchase
         purchase_date=purchase_date,
         order_number=order_number,
         asin=order.asin,
-        product_name=order.product_name,
+        # 仕入管理の商品名列はSalesシートの商品名
+        product_name=order.sales_product_name or order.product_name,
         url=order.purchase_url,
         detail=order.color_size_spec,
+        image_text=order.image_text,
         quantity=quantity,
         unit_price=unit_price,
         total_price=total_price,
@@ -58,17 +61,16 @@ def record_purchase_management(
             client=base.client,
         )
 
-        total_recorded = 0
-        for result in order_groups:
-            order_number = result.order_number or ""
-            for order in result.order_group:
-                try:
-                    item = _to_purchase_management_item(order, order_number=order_number)
-                    repository.append(item)
-                    total_recorded += 1
-                except Exception as e:
-                    logger.warning("仕入管理の記録に失敗しました（商品: %s）: %s", getattr(order, "product_name", "不明"), e)
-                    continue
+        total_recorded = append_items_from_order_groups(
+            order_groups=order_groups,
+            to_item=lambda order, order_number: _to_purchase_management_item(order, order_number=order_number),
+            append=repository.append,
+            on_error=lambda order, e: logger.warning(
+                "仕入管理の記録に失敗しました（商品: %s）: %s",
+                getattr(order, "product_name", "不明"),
+                e,
+            ),
+        )
 
         logger.info("✓ %s件の仕入管理を記録しました", total_recorded)
     except Exception as e:

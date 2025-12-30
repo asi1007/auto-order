@@ -11,7 +11,14 @@ from usecases.get_order_data_usecase import GetOrderDataUseCase
 
 
 def test_get_order_data_usecase_execute_success():
-    sales_df = pd.DataFrame({"ASIN": ["B001", "B002", "B003"], "発注数": [10, 20, 15]})
+    sales_df = pd.DataFrame(
+        {
+            "ASIN": ["B001", "B002", "B003"],
+            "商品名": ["売上商品1", "売上商品2", "売上商品3"],
+            "画像": ["img1", "img2", ""],
+            "発注数": [10, 20, 15],
+        }
+    )
     purchase_df = pd.DataFrame(
         {
             "ASIN": ["B001", "B002"],
@@ -41,15 +48,19 @@ def test_get_order_data_usecase_execute_success():
     assert isinstance(result[0], Order)
     assert result[0].asin == "B001"
     assert result[0].order_quantity == 50
+    assert result[0].sales_product_name == "売上商品1"
+    assert result[0].image_text == "img1"
     assert result[1].asin == "B002"
     assert result[1].order_quantity == 200
+    assert result[1].sales_product_name == "売上商品2"
+    assert result[1].image_text == "img2"
 
     mock_sales_repo.read.assert_called_once()
     mock_purchase_repo.read.assert_called_once()
 
 
 def test_get_order_data_usecase_execute_no_order_data_raises():
-    sales_df = pd.DataFrame({"ASIN": ["B001"], "発注数": [1]})
+    sales_df = pd.DataFrame({"ASIN": ["B001"], "商品名": ["売上商品1"], "画像": ["img1"], "発注数": [1]})
     purchase_df = pd.DataFrame(
         {
             "ASIN": ["B001"],

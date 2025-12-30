@@ -43,12 +43,14 @@ class OrderMergeService:
                 order = Order(
                     asin=sales_item.asin,
                     product_name=purchase_item.title,
+                    sales_product_name=sales_item.product_name or purchase_item.title,
                     purchase_url=purchase_item.purchase_url,
                     color_size_spec=purchase_item.color_size_spec,
                     order_quantity=int(final_order_quantity),
                     unit_price=resolved_unit_price,
                     chatwork_message=purchase_item.chatwork_message,
                     chatwork_attachment=purchase_item.chatwork_attachment,
+                    image_text=sales_item.image_text,
                 )
                 order_list.append(order)
         

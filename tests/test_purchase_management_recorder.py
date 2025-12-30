@@ -10,8 +10,8 @@ from infrastructure.purchase_management_recorder import record_purchase_manageme
 class TestRecordPurchaseManagement:
     def test_records_each_order_to_management_sheet(self):
         orders = [
-            Order(asin="A1", product_name="p1", purchase_url="u1", order_quantity=2, unit_price=100),
-            Order(asin="A2", product_name="p2", purchase_url="u2", order_quantity=1, unit_price=None),
+            Order(asin="A1", product_name="p1", sales_product_name="売上p1", purchase_url="u1", order_quantity=2, unit_price=100, image_text="img1"),
+            Order(asin="A2", product_name="p2", sales_product_name="売上p2", purchase_url="u2", order_quantity=1, unit_price=None, image_text=""),
         ]
         results = [OrderGroup(order_group=orders, order_number="2025-12345678")]
 
