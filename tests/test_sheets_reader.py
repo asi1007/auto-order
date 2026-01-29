@@ -17,6 +17,7 @@ def test_get_order_data_usecase_execute_success():
             "商品名": ["売上商品1", "売上商品2", "売上商品3"],
             "画像": ["img1", "img2", ""],
             "備考": ["memo1", "memo2", ""],
+            "納品分類": ["特別", "通常", ""],
             "発注数": [10, 20, 15],
         }
     )
@@ -52,18 +53,20 @@ def test_get_order_data_usecase_execute_success():
     assert result[0].sales_product_name == "売上商品1"
     assert result[0].image_text == "img1"
     assert result[0].remark_text == "memo1"
+    assert result[0].delivery_category == "特別"
     assert result[1].asin == "B002"
     assert result[1].order_quantity == 200
     assert result[1].sales_product_name == "売上商品2"
     assert result[1].image_text == "img2"
     assert result[1].remark_text == "memo2"
+    assert result[1].delivery_category == "通常"
 
     mock_sales_repo.read.assert_called_once()
     mock_purchase_repo.read.assert_called_once()
 
 
 def test_get_order_data_usecase_execute_no_order_data_raises():
-    sales_df = pd.DataFrame({"ASIN": ["B001"], "商品名": ["売上商品1"], "画像": ["img1"], "備考": ["memo1"], "発注数": [1]})
+    sales_df = pd.DataFrame({"ASIN": ["B001"], "商品名": ["売上商品1"], "画像": ["img1"], "備考": ["memo1"], "納品分類": ["特別"], "発注数": [1]})
     purchase_df = pd.DataFrame(
         {
             "ASIN": ["B001"],

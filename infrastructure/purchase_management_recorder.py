@@ -5,41 +5,98 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from datetime import datetime
 
 from domain.entities.order_group import OrderGroup
 from domain.entities.order import Order
 from domain.value_objects.purchase_management import PurchaseManagementItem
-from infrastructure.order_group_recording import append_items_from_order_groups
 from infrastructure.repositories import BaseSheetsRepository, SheetsPurchaseManagementRepository
 
 
 logger = logging.getLogger(__name__)
 
 
-def _to_purchase_management_item(order: Order, *, order_number: str) -> PurchaseManagementItem:
-    purchase_date = datetime.now().strftime("%Y-%m-%d")
-    quantity = int(order.order_quantity) * int(order.lot_size or 1)
-    unit_price = order.unit_price
-    total_price = None
-    if unit_price is not None:
-        total_price = float(unit_price) * float(quantity)
+def _calc_purchase_management_quantity(order: Order) -> int:
+    base_qty = int(order.sales_order_quantity) if int(order.sales_order_quantity) > 0 else int(order.order_quantity)
+    return base_qty * int(order.lot_size or 1)
 
-    return PurchaseManagementItem(
-        purchase_date=purchase_date,
-        order_number=order_number,
-        asin=order.asin,
-        # 仕入管理の商品名列はSalesシートの商品名
-        product_name=order.sales_product_name or order.product_name,
-        url=order.purchase_url,
-        detail=order.color_size_spec,
-        image_text=order.image_text,
-        remark_text=order.remark_text,
-        quantity=quantity,
-        unit_price=unit_price,
-        total_price=total_price,
-        material_name=order.material_name,
-    )
+
+def _join_unique_text(values: list[str], *, sep: str) -> str:
+    unique: list[str] = []
+    for v in values:
+        s = str(v or "").strip()
+        if not s:
+            continue
+        if s in unique:
+            continue
+        unique.append(s)
+    return sep.join(unique)
+
+
+def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: str) -> list[PurchaseManagementItem]:
+    """
+    仕入管理シートには「ASINごとに1行」で記載したいので、同一ASINのOrderを集約してPurchaseManagementItemを作る。
+    """
+    purchase_date = datetime.now().strftime("%Y-%m-%d")
+
+    by_asin: dict[str, list[Order]] = defaultdict(list)
+    for o in orders:
+        by_asin[str(o.asin)].append(o)
+
+    items: list[PurchaseManagementItem] = []
+    for asin, grouped in by_asin.items():
+        quantities = [_calc_purchase_management_quantity(o) for o in grouped]
+        quantity_sum = float(sum(quantities))
+        quantity_avg = quantity_sum / float(len(grouped))
+        quantity: float
+        quantity = float(int(quantity_avg)) if float(quantity_avg).is_integer() else float(quantity_avg)
+
+        unit_prices = [o.unit_price for o in grouped if o.unit_price is not None]
+        unit_price: float | None = None
+        if len(unit_prices) == len(grouped):
+            # 単価は合計（同一/不一致は問わない。ただし欠損がある場合は空欄）
+            unit_price = float(sum(float(p) for p in unit_prices))
+
+        total_prices = []
+        for o in grouped:
+            if o.unit_price is None:
+                total_prices = []
+                break
+            total_prices.append(float(o.unit_price) * float(_calc_purchase_management_quantity(o)))
+        total_price: float | None = float(sum(total_prices)) if total_prices else None
+
+        product_name = _join_unique_text(
+            [(o.sales_product_name or o.product_name) for o in grouped],
+            sep=" / ",
+        )
+        url = _join_unique_text([o.purchase_url for o in grouped], sep="\n")
+        detail = _join_unique_text([o.color_size_spec for o in grouped], sep=" / ")
+        image_text = _join_unique_text([o.image_text for o in grouped], sep="\n")
+        remark_text = _join_unique_text([o.remark_text for o in grouped], sep="\n")
+        delivery_category = _join_unique_text([o.delivery_category for o in grouped], sep=" / ")
+        material_name = _join_unique_text([o.material_name for o in grouped], sep=" / ")
+
+        items.append(
+            PurchaseManagementItem(
+                purchase_date=purchase_date,
+                order_number=order_number,
+                asin=asin,
+                # 仕入管理の商品名列はSalesシートの商品名
+                product_name=product_name,
+                url=url,
+                detail=detail,
+                image_text=image_text,
+                remark_text=remark_text,
+                delivery_category=delivery_category,
+                quantity=quantity,
+                unit_price=unit_price,
+                total_price=total_price,
+                material_name=material_name,
+            )
+        )
+
+    return items
 
 
 def record_purchase_management(
@@ -62,16 +119,21 @@ def record_purchase_management(
             client=base.client,
         )
 
-        total_recorded = append_items_from_order_groups(
-            order_groups=order_groups,
-            to_item=lambda order, order_number: _to_purchase_management_item(order, order_number=order_number),
-            append=repository.append,
-            on_error=lambda order, e: logger.warning(
-                "仕入管理の記録に失敗しました（商品: %s）: %s",
-                getattr(order, "product_name", "不明"),
-                e,
-            ),
-        )
+        total_recorded = 0
+        for result in order_groups:
+            order_number = result.order_number or ""
+            items = _to_purchase_management_items_by_asin(result.order_group, order_number=order_number)
+            for item in items:
+                try:
+                    repository.append(item)
+                    total_recorded += 1
+                except Exception as e:
+                    logger.warning(
+                        "仕入管理の記録に失敗しました（ASIN: %s）: %s",
+                        getattr(item, "asin", "不明"),
+                        e,
+                    )
+                    continue
 
         logger.info("✓ %s件の仕入管理を記録しました", total_recorded)
     except Exception as e:

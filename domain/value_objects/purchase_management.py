@@ -15,9 +15,11 @@ class PurchaseManagementItem:
     product_name: str
     url: str
     detail: str
-    quantity: int
+    # 仕入管理シート上の「数量/購入数」等に記録する値（平均値になる場合があるためfloatを許容）
+    quantity: float
     image_text: str = ""
     remark_text: str = ""
+    delivery_category: str = ""
     unit_price: float | None = None
     total_price: float | None = None
     material_name: str = ""

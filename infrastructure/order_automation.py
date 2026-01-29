@@ -2,8 +2,9 @@
 Playwrightを使用してイーウーパスポートの注文フォームに自動入力するモジュール
 """
 
-from playwright.sync_api import sync_playwright, Page, Browser
-from typing import List, Optional
+from __future__ import annotations
+
+from typing import List, Optional, TYPE_CHECKING
 import time
 import logging
 import re
@@ -11,6 +12,21 @@ import os
 
 from domain.entities.order_group import OrderGroup
 from domain.entities.order import Order
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
+
+
+def sync_playwright():  # pragma: no cover
+    """
+    playwright.sync_api.sync_playwright の遅延 import ラッパ。
+
+    - テスト環境では playwright が入っていないことがあるため import-time 依存を避ける
+    - ユニットテストでは @patch('infrastructure.order_automation.sync_playwright') で差し替える
+    """
+    from playwright.sync_api import sync_playwright as _sync_playwright
+
+    return _sync_playwright()
 
 
 class OrderAutomation:

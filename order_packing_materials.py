@@ -128,6 +128,23 @@ def order_packing_materials():
             results,
             purchase_history_sheet_name
         )
+
+        # 発注完了（注文番号が取れた）分は、使用資材シートの発注数を空欄に戻す
+        completed_material_names: set[str] = set()
+        for result in results:
+            if not result.order_number:
+                continue
+            for order in result.order_group:
+                name = getattr(order, "material_name", "") or getattr(order, "asin", "")
+                if name:
+                    completed_material_names.add(str(name).strip())
+        if completed_material_names:
+            repo = SheetsPackingMaterialsSheetRepository(credentials_file)
+            repo.clear_order_quantities(
+                packing_materials_url,
+                sorted(completed_material_names),
+                sheet_name=packing_materials_sheet_name or "使用資材",
+            )
         
     except NoOrderDataException:
         return

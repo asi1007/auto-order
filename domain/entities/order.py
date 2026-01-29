@@ -9,6 +9,8 @@ class Order:
     product_name: str
     purchase_url: str
     order_quantity: int
+    # 売上/日（Sales）シートに記録されている発注量（仕入管理への記録に使用）
+    sales_order_quantity: int = 0
     sales_product_name: str = ""
     color_size_spec: str = ""
     unit_price: float | None = None
@@ -16,6 +18,7 @@ class Order:
     chatwork_attachment: str = ""
     image_text: str = ""
     remark_text: str = ""
+    delivery_category: str = ""
     material_name: str = ""
     lot_size: int = 1
 

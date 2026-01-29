@@ -47,11 +47,13 @@ class OrderMergeService:
                     purchase_url=purchase_item.purchase_url,
                     color_size_spec=purchase_item.color_size_spec,
                     order_quantity=int(final_order_quantity),
+                    sales_order_quantity=int(sales_item.order_quantity),
                     unit_price=resolved_unit_price,
                     chatwork_message=purchase_item.chatwork_message,
                     chatwork_attachment=purchase_item.chatwork_attachment,
                     image_text=sales_item.image_text,
                     remark_text=sales_item.remark_text,
+                    delivery_category=sales_item.delivery_category,
                 )
                 order_list.append(order)
         

@@ -14,6 +14,7 @@ from infrastructure import (
     ChatworkClient,
     record_purchase_management,
 )
+from infrastructure.repositories import BaseSheetsRepository, SheetsSalesSheetRepository
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,19 @@ def order_items():
             results,
             config.purchase_management_sheet_name,
         )
+
+        # 発注完了（注文番号が取れた）分は、売上/日の発注数を空欄に戻す
+        completed_asins: set[str] = set()
+        for result in results:
+            if not result.order_number:
+                continue
+            for order in result.order_group:
+                if getattr(order, "asin", ""):
+                    completed_asins.add(str(order.asin).strip())
+        if completed_asins:
+            base = BaseSheetsRepository(config.credentials_file)
+            sales_repo = SheetsSalesSheetRepository(config.credentials_file, client=base.client)
+            sales_repo.clear_order_quantities(config.sales_url, sorted(completed_asins))
         
         chatwork_client.send_notifications_for_order_groups(order_groups)
         
