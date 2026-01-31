@@ -23,5 +23,9 @@ class PurchaseManagementItem:
     unit_price: float | None = None
     total_price: float | None = None
     material_name: str = ""
+    # 現地価格（元）
+    local_price: float | None = None
+    # 購入価格（円換算）
+    purchase_price_jpy: float | None = None
 
 

@@ -12,6 +12,7 @@ from domain.entities.order_group import OrderGroup
 from domain.entities.order import Order
 from domain.value_objects.purchase_management import PurchaseManagementItem
 from infrastructure.repositories import BaseSheetsRepository, SheetsPurchaseManagementRepository
+from infrastructure.exchange_rate_service import convert_cny_to_jpy
 
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,11 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
         delivery_category = _join_unique_text([o.delivery_category for o in grouped], sep=" / ")
         material_name = _join_unique_text([o.material_name for o in grouped], sep=" / ")
 
+        local_price: float | None = total_price
+        purchase_price_jpy: float | None = None
+        if local_price is not None:
+            purchase_price_jpy = convert_cny_to_jpy(local_price)
+
         items.append(
             PurchaseManagementItem(
                 purchase_date=purchase_date,
@@ -93,6 +99,8 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
                 unit_price=unit_price,
                 total_price=total_price,
                 material_name=material_name,
+                local_price=local_price,
+                purchase_price_jpy=purchase_price_jpy,
             )
         )
 

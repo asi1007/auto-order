@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -7,6 +8,9 @@ from gspread.utils import rowcol_to_a1
 
 from domain.value_objects.purchase_management import PurchaseManagementItem
 from infrastructure.repositories.base_sheets_repository import BaseSheetsRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_gid(sheet_url: str) -> int:
@@ -98,6 +102,26 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
         ranges.append((start, prev + 1))
         return ranges
 
+    FORMULA_ONLY_COLUMNS: set[str] = {
+        "買付完了日",
+        "到着日",
+        "状態",
+        "昨日売上個数",
+        "３日平均売上個数",
+        "3日平均売上個数",
+        "週平均売上個数",
+        "合計日数",
+        "FBA日数",
+        "手配中在庫日数",
+        "FBA在庫",
+        "未発送+梱包依頼済み+納品中",
+        "イーウーステータス",
+        "年",
+        "月",
+        "週",
+        "行番号",
+    }
+
     def append(self, item: PurchaseManagementItem) -> None:
         spreadsheet = self.client.open_by_url(self.sheet_url)
         worksheet = spreadsheet.worksheet(self.sheet_name)
@@ -136,6 +160,9 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
             "合計": "" if item.total_price is None else self._to_sheet_number(float(item.total_price)),
             "資材": item.material_name,
             "資材名称": item.material_name,
+            # 現地価格（元）と購入価格（円換算）
+            "現地価格": "" if item.local_price is None else self._to_sheet_number(float(item.local_price)),
+            "購入価格": "" if item.purchase_price_jpy is None else self._to_sheet_number(float(item.purchase_price_jpy)),
         }
 
         header_cells = [str(h).strip() for h in headers]
@@ -177,9 +204,17 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
             for idx_0based, prev_cell in enumerate(prev_cells):
                 is_formula = isinstance(prev_cell, str) and prev_cell.strip().startswith("=")
                 is_empty_now = str(row_values[idx_0based]).strip() == ""
-                if is_formula and is_empty_now:
+                header_name = header_cells[idx_0based].strip() if idx_0based < len(header_cells) else ""
+                is_formula_only_column = header_name in self.FORMULA_ONLY_COLUMNS
+                if is_formula_only_column:
+                    logger.debug(
+                        "数式コピー対象列検出: idx=%d, header=%s, is_formula=%s, prev_cell=%s",
+                        idx_0based, header_name, is_formula, prev_cell
+                    )
+                if is_formula and (is_empty_now or is_formula_only_column):
                     formula_cols_0based.append(idx_0based)
 
+            logger.info("数式コピー対象列: %s", formula_cols_0based)
             for start_col, end_col in self._contiguous_ranges(formula_cols_0based):
                 requests.append(
                     {
