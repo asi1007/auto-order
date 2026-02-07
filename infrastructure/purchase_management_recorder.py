@@ -61,8 +61,9 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
         if len(unit_prices) == len(grouped):
             # 単価は合計（同一/不一致は問わない。ただし欠損がある場合は空欄）
             unit_price_base = float(sum(float(p) for p in unit_prices))
-            # 一商品辺りの発注数を掛け算
-            unit_price = unit_price_base * quantity
+            # 1商品辺り発注数を掛け算
+            qty_per_item = float(max(o.quantity_per_item for o in grouped))
+            unit_price = unit_price_base * qty_per_item
             # 単価をJPYに変換
             unit_price_jpy = convert_cny_to_jpy(unit_price)
 

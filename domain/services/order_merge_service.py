@@ -54,6 +54,7 @@ class OrderMergeService:
                     image_text=sales_item.image_text,
                     remark_text=sales_item.remark_text,
                     delivery_category=sales_item.delivery_category,
+                    quantity_per_item=int(purchase_item.quantity_per_item),
                 )
                 order_list.append(order)
         

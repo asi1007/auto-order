@@ -54,6 +54,7 @@ class TestRecordPurchaseManagement:
                 remark_text="memo1",
                 delivery_category="特別",
                 lot_size=1,
+                quantity_per_item=3,
             ),
             Order(
                 asin="A1",
@@ -67,6 +68,7 @@ class TestRecordPurchaseManagement:
                 remark_text="memo1",
                 delivery_category="特別",
                 lot_size=2,
+                quantity_per_item=5,
             ),
         ]
         results = [OrderGroup(order_group=orders, order_number="2025-99999999")]
@@ -95,8 +97,8 @@ class TestRecordPurchaseManagement:
         # quantity = sales_order_quantity優先。さらに lot_size を掛けた値の「平均」
         expected_quantity = ((2 * 1) + (3 * 2)) / 2
         assert item.quantity == expected_quantity
-        # 単価は「合計」に「一商品辺りの発注数」を掛け算
-        expected_unit_price = (100 + 100) * expected_quantity
+        # 単価は「合計」に「1商品辺り発注数」（max=5）を掛け算
+        expected_unit_price = (100 + 100) * 5
         assert item.unit_price == expected_unit_price
 
     def test_selling_price_is_passed_to_purchase_management_item(self):

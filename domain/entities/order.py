@@ -21,6 +21,7 @@ class Order:
     delivery_category: str = ""
     material_name: str = ""
     lot_size: int = 1
+    quantity_per_item: int = 1
     selling_price: float | None = None
 
     @property
