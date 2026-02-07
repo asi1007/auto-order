@@ -47,25 +47,24 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
 
     items: list[PurchaseManagementItem] = []
     for asin, grouped in by_asin.items():
-        quantities = [_calc_purchase_management_quantity(o) for o in grouped]
-        quantity_sum = float(sum(quantities))
-        quantity_avg = quantity_sum / float(len(grouped))
-        quantity: float
-        quantity = float(int(quantity_avg)) if float(quantity_avg).is_integer() else float(quantity_avg)
+        def _calc_aggregated_quantity(grouped: list[Order]) -> float:
+            quantities = [_calc_purchase_management_quantity(o) for o in grouped]
+            quantity_sum = float(sum(quantities))
+            quantity_avg = quantity_sum / float(len(grouped))
+            return float(int(quantity_avg)) if float(quantity_avg).is_integer() else float(quantity_avg)
+
+        quantity = _calc_aggregated_quantity(grouped)
 
         unit_prices = [o.unit_price for o in grouped if o.unit_price is not None]
         unit_price: float | None = None
+        unit_price_jpy: float | None = None
         if len(unit_prices) == len(grouped):
             # 単価は合計（同一/不一致は問わない。ただし欠損がある場合は空欄）
-            unit_price = float(sum(float(p) for p in unit_prices))
-
-        total_prices = []
-        for o in grouped:
-            if o.unit_price is None:
-                total_prices = []
-                break
-            total_prices.append(float(o.unit_price) * float(_calc_purchase_management_quantity(o)))
-        total_price: float | None = float(sum(total_prices)) if total_prices else None
+            unit_price_base = float(sum(float(p) for p in unit_prices))
+            # 一商品辺りの発注数を掛け算
+            unit_price = unit_price_base * quantity
+            # 単価をJPYに変換
+            unit_price_jpy = convert_cny_to_jpy(unit_price)
 
         product_name = _join_unique_text(
             [(o.sales_product_name or o.product_name) for o in grouped],
@@ -78,10 +77,12 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
         delivery_category = _join_unique_text([o.delivery_category for o in grouped], sep=" / ")
         material_name = _join_unique_text([o.material_name for o in grouped], sep=" / ")
 
-        local_price: float | None = total_price
-        purchase_price_jpy: float | None = None
-        if local_price is not None:
-            purchase_price_jpy = convert_cny_to_jpy(local_price)
+        # 販売価格は同一ASINなので最初のOrderの値を使う
+        selling_price: float | None = None
+        for o in grouped:
+            if o.selling_price is not None:
+                selling_price = o.selling_price
+                break
 
         items.append(
             PurchaseManagementItem(
@@ -97,10 +98,9 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
                 delivery_category=delivery_category,
                 quantity=quantity,
                 unit_price=unit_price,
-                total_price=total_price,
+                unit_price_jpy=unit_price_jpy,
+                selling_price=selling_price,
                 material_name=material_name,
-                local_price=local_price,
-                purchase_price_jpy=purchase_price_jpy,
             )
         )
 

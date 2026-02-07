@@ -21,6 +21,7 @@ class Order:
     delivery_category: str = ""
     material_name: str = ""
     lot_size: int = 1
+    selling_price: float | None = None
 
     @property
     def normalized_purchase_url(self) -> str:

@@ -7,6 +7,39 @@ from domain.value_objects.purchase_info_sheet import PurchaseInfoSheet
 
 
 class SheetsPurchaseInfoSheetRepository(BaseSheetsRepository):
+    def read_selling_prices(self, sheet_url: str, sheet_name: str = "納品状況") -> dict[str, float]:
+        """
+        納品状況シートから ASIN → 販売価格 の辞書を返す。
+        1行目ヘッダー、A列=ASIN、「販売価格」列（ヘッダー名で検出）。
+        """
+        worksheet = self.open_worksheet(sheet_url, sheet_name)
+        data = worksheet.get_all_values()
+        if not data or len(data) < 2:
+            return {}
+
+        headers = [str(h).strip() for h in data[0]]
+        asin_col: int | None = None
+        price_col: int | None = None
+        for i, h in enumerate(headers):
+            if "ASIN" in h and asin_col is None:
+                asin_col = i
+            if "販売価格" in h and price_col is None:
+                price_col = i
+        if asin_col is None or price_col is None:
+            return {}
+
+        result: dict[str, float] = {}
+        for row in data[1:]:
+            asin = str(row[asin_col]).strip() if asin_col < len(row) else ""
+            price_str = str(row[price_col]).strip() if price_col < len(row) else ""
+            if not asin or not price_str:
+                continue
+            try:
+                result[asin] = float(price_str)
+            except ValueError:
+                continue
+        return result
+
     def read(self, sheet_url: str, sheet_name: str = "仕入情報") -> PurchaseInfoSheet:
         worksheet = self.open_worksheet(sheet_url, sheet_name)
         data = worksheet.get_all_values()

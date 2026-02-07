@@ -38,6 +38,7 @@ def test_get_order_data_usecase_execute_success():
     mock_sales_repo.read.return_value = SalesSheet.from_dataframe(sales_df)
     mock_purchase_repo = Mock()
     mock_purchase_repo.read.return_value = PurchaseInfoSheet.from_dataframe(purchase_df)
+    mock_purchase_repo.read_selling_prices.return_value = {"B001": 1980.0, "B002": 2500.0}
 
     usecase = GetOrderDataUseCase(
         sales_repository=mock_sales_repo,
@@ -54,15 +55,18 @@ def test_get_order_data_usecase_execute_success():
     assert result[0].image_text == "img1"
     assert result[0].remark_text == "memo1"
     assert result[0].delivery_category == "特別"
+    assert result[0].selling_price == 1980.0
     assert result[1].asin == "B002"
     assert result[1].order_quantity == 200
     assert result[1].sales_product_name == "売上商品2"
     assert result[1].image_text == "img2"
     assert result[1].remark_text == "memo2"
     assert result[1].delivery_category == "通常"
+    assert result[1].selling_price == 2500.0
 
     mock_sales_repo.read.assert_called_once()
     mock_purchase_repo.read.assert_called_once()
+    mock_purchase_repo.read_selling_prices.assert_called_once()
 
 
 def test_get_order_data_usecase_execute_no_order_data_raises():
@@ -84,6 +88,7 @@ def test_get_order_data_usecase_execute_no_order_data_raises():
     mock_sales_repo.read.return_value = SalesSheet.from_dataframe(sales_df)
     mock_purchase_repo = Mock()
     mock_purchase_repo.read.return_value = PurchaseInfoSheet.from_dataframe(purchase_df)
+    mock_purchase_repo.read_selling_prices.return_value = {}
 
     usecase = GetOrderDataUseCase(
         sales_repository=mock_sales_repo,

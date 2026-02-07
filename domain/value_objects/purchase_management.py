@@ -21,6 +21,8 @@ class PurchaseManagementItem:
     remark_text: str = ""
     delivery_category: str = ""
     unit_price: float | None = None
+    unit_price_jpy: float | None = None
+    selling_price: float | None = None
     total_price: float | None = None
     material_name: str = ""
     # 現地価格（元）
