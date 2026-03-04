@@ -33,27 +33,27 @@ class PurchaseInfoItem:
     
     def get_best_price(self, order_quantity: int) -> float:
         import re
-        
+
         # 基本単価をデフォルトとして設定
         best_price = self.unit_price if self.unit_price > 0 else float('inf')
-        
+
         applicable_prices = []
-        
+
         for col_name, price in self.bulk_discounts.items():
             if price <= 0:
                 continue
-            
+
             # 列名から最低数量を抽出
             match = re.search(r'(\d+)', str(col_name))
             if not match:
                 continue
-            
+
             min_quantity = float(match.group(1))
-            
+
             # 発注数が最低数量以上の場合
             if order_quantity >= min_quantity:
                 applicable_prices.append((min_quantity, price))
-        
+
         # 適用可能な価格がある場合、最も安い価格を選択
         if applicable_prices:
             applicable_prices.sort(key=lambda x: x[1])  # 価格でソート
@@ -61,11 +61,11 @@ class PurchaseInfoItem:
             # 基本単価よりも安い場合のみ数量割引価格を使用
             if cheapest_discount_price < best_price:
                 best_price = cheapest_discount_price
-        
+
         # best_priceがinfの場合は0を返す
         if best_price == float('inf'):
             best_price = 0.0
-        
+
         return best_price
 
 

@@ -1,9 +1,3 @@
-"""
-梱包材発注自動化スクリプト
-
-Googleシートから梱包材の発注情報を読み込み、イーウーパスポートの注文フォームに自動入力します。
-"""
-
 import logging
 import os
 from dotenv import load_dotenv
@@ -21,7 +15,7 @@ def convert_packing_materials_to_order_format(packing_materials_item) -> Order:
     assert packing_materials_item.product_name, "商品名は必須です"
     assert packing_materials_item.url, "URLは必須です"
     assert packing_materials_item.order_quantity > 0, "発注数は0より大きい必要があります"
-    
+
     return Order(
         asin=str(packing_materials_item.material_name),
         material_name=str(packing_materials_item.material_name),
@@ -37,99 +31,78 @@ def convert_packing_materials_to_order_format(packing_materials_item) -> Order:
 
 
 def get_packing_materials_order_data(credentials_file: str, packing_materials_url: str, sheet_name: str = None) -> list[Order]:
-    import logging
-    logger = logging.getLogger(__name__)
-    
     assert credentials_file, "credentials_fileは必須です"
     assert packing_materials_url, "packing_materials_urlは必須です"
-    
+
     logger.info("[ステップ1] Googleシートから梱包材発注データを読み込んでいます...")
     repository = SheetsPackingMaterialsSheetRepository(credentials_file)
     packing_materials_sheet = repository.read(packing_materials_url, sheet_name or "使用資材")
     assert packing_materials_sheet is not None, "packing_materials_sheetはNoneであってはなりません"
-    
+
     order_list: list[Order] = []
     for item in packing_materials_sheet.items:
         assert item.order_quantity >= 0, f"発注数は0以上である必要があります（商品: {item.product_name}）"
         if item.order_quantity > 0:
             order_info = convert_packing_materials_to_order_format(item)
             order_list.append(order_info)
-    
+
     if not order_list:
         logger.info("処理する発注データがありません（発注数が0より大きい行がありません）")
         raise NoOrderDataException("処理する発注データがありません")
-    
+
     logger.info(f"✓ {len(order_list)}件の梱包材発注データを読み込みました")
-    
     assert len(order_list) > 0, "order_listは空であってはなりません"
-    
+
     logger.info("[発注データ一覧]")
     logger.info("-" * 60)
     for i, order in enumerate(order_list, 1):
         assert order.product_name, f"order[{i}]に商品名がありません"
         assert order.purchase_url, f"order[{i}]に購入先URLがありません"
         assert order.order_quantity > 0, f"order[{i}]の発注数は0より大きい必要があります"
-        
-        logger.info(
-            "  商品%s: %s",
-            i,
-            order.product_name,
-        )
-        logger.info(
-            "         URL: %s",
-            order.purchase_url,
-        )
-        logger.info(
-            "         発注数: %s, 単価: %s",
-            order.order_quantity,
-            order.unit_price_for_form,
-        )
+
+        logger.info("  商品%s: %s", i, order.product_name)
+        logger.info("         URL: %s", order.purchase_url)
+        logger.info("         発注数: %s, 単価: %s", order.order_quantity, order.unit_price_for_form)
         if order.color_size_spec:
-            logger.info(
-                "         詳細: %s",
-                order.color_size_spec,
-            )
-    
+            logger.info("         詳細: %s", order.color_size_spec)
+
     return order_list
 
 
 def order_packing_materials():
     load_dotenv()
-    
-    credentials_file = os.getenv('GOOGLE_CREDENTIALS_FILE', 'credentials.json')
-    packing_materials_url = os.getenv('PACKING_MATERIALS_SHEET_URL')
-    purchase_history_url = os.getenv('PURCHASE_HISTORY_SHEET_URL')
-    purchase_history_sheet_name = os.getenv('PURCHASE_HISTORY_SHEET_NAME')
-    headless = os.getenv('HEADLESS', 'False').lower() == 'true'
-    packing_materials_sheet_name = os.getenv('PACKING_MATERIALS_SHEET_NAME')
+
+    credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
+    packing_materials_url = os.getenv("PACKING_MATERIALS_SHEET_URL")
+    purchase_history_url = os.getenv("PURCHASE_HISTORY_SHEET_URL")
+    purchase_history_sheet_name = os.getenv("PURCHASE_HISTORY_SHEET_NAME")
+    headless = os.getenv("HEADLESS", "False").lower() == "true"
+    packing_materials_sheet_name = os.getenv("PACKING_MATERIALS_SHEET_NAME")
     automation = OrderAutomation.from_env(headless=headless)
-    
+
     if not validate_config(
         credentials_file,
         sheet_urls=[packing_materials_url],
-        sheet_url_names=['PACKING_MATERIALS_SHEET_URL'],
+        sheet_url_names=["PACKING_MATERIALS_SHEET_URL"],
     ):
         return
-    
-    
+
     try:
         order_list = get_packing_materials_order_data(credentials_file, packing_materials_url, packing_materials_sheet_name)
         assert order_list, "order_listは空であってはなりません"
-        
+
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
         assert order_groups, "order_groupsは空であってはなりません"
-        
+
         results = automation.process_orders(order_groups)
-        
-        # 購入履歴を記録
+
         record_purchase_history(
             credentials_file,
             purchase_history_url,
             results,
-            purchase_history_sheet_name
+            purchase_history_sheet_name,
         )
 
-        # 発注完了（注文番号が取れた）分は、使用資材シートの発注数を空欄に戻す
         completed_material_names: set[str] = set()
         for result in results:
             if not result.order_number:
@@ -145,7 +118,7 @@ def order_packing_materials():
                 sorted(completed_material_names),
                 sheet_name=packing_materials_sheet_name or "使用資材",
             )
-        
+
     except NoOrderDataException:
         return
     except Exception as e:
@@ -158,5 +131,3 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     order_packing_materials()
-
-

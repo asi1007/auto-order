@@ -1,9 +1,3 @@
-"""
-商品発注自動化スクリプト
-
-Googleシートから発注情報を読み込み、イーウーパスポートの注文フォームに自動入力します。
-"""
-
 import logging
 from infrastructure import (
     AppConfig,
@@ -25,13 +19,12 @@ def order_items():
     automation = OrderAutomation.from_env(headless=config.headless)
     chatwork_client = ChatworkClient.from_env()
     assert config.validate(), "設定が不正です（.env/環境変数と認証情報ファイルを確認してください）"
-    
+
     try:
         order_list = get_order_data(config.credentials_file, config.sales_url, config.purchase_url)
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
         results = automation.process_orders(order_groups)
-        
-        # 仕入管理シートに記録（OrderAutomation結果はこっちへ保存）
+
         record_purchase_management(
             config.credentials_file,
             config.purchase_management_sheet_url,
@@ -39,7 +32,6 @@ def order_items():
             config.purchase_management_sheet_name,
         )
 
-        # 発注完了（注文番号が取れた）分は、売上/日の発注数を空欄に戻す
         completed_asins: set[str] = set()
         for result in results:
             if not result.order_number:
@@ -51,9 +43,9 @@ def order_items():
             base = BaseSheetsRepository(config.credentials_file)
             sales_repo = SheetsSalesSheetRepository(config.credentials_file, client=base.client)
             sales_repo.clear_order_quantities(config.sales_url, sorted(completed_asins))
-        
+
         chatwork_client.send_notifications_for_order_groups(order_groups)
-        
+
     except NoOrderDataException:
         return
     except Exception as e:
@@ -66,4 +58,3 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     order_items()
-

@@ -58,17 +58,24 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
         header_cells = self._header_cells
         row_values = self._build_row_values(item, header_cells)
         target_row = self._determine_target_row(self._worksheet, header_cells)
+
+        # フィルタを一時解除（フィルタ適用中のcopyPasteエラーを回避）
+        saved_filter = self._clear_basic_filter(self._spreadsheet, self._worksheet)
+
         self._write_row(self._worksheet, target_row, header_cells, row_values)
-        
+
         # 直前の行から数式をコピー
         formula_requests = self._build_formula_copy_requests(self._worksheet, target_row, header_cells, row_values)
         if formula_requests:
             self._execute_batch_update(self._spreadsheet, formula_requests)
-        
-        # フィルタ範囲を新しい行まで拡張
-        filter_requests = self._build_filter_expand_requests(self._spreadsheet, self._worksheet, target_row)
-        if filter_requests:
-            self._execute_batch_update(self._spreadsheet, filter_requests)
+
+        # フィルタを復元（範囲を新しい行まで拡張して再適用）
+        self._restore_basic_filter(self._spreadsheet, self._worksheet, saved_filter, target_row)
+
+        # フィルタビューの範囲を拡張
+        filter_view_requests = self._build_filter_view_expand_requests(self._spreadsheet, self._worksheet, target_row)
+        if filter_view_requests:
+            self._execute_batch_update(self._spreadsheet, filter_view_requests)
 
     def _build_row_values(self, item: PurchaseManagementItem, header_cells: list[str]) -> list[Any]:
         value_by_header = self._create_value_mapping(item)
@@ -196,22 +203,49 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
             })
         return requests
 
-    def _build_filter_expand_requests(self, spreadsheet, worksheet, target_row: int) -> list[dict[str, Any]]:
-        requests: list[dict[str, Any]] = []
+    def _clear_basic_filter(self, spreadsheet, worksheet) -> dict[str, Any] | None:
         try:
             sheet_meta = self._find_sheet_metadata(spreadsheet, worksheet.id)
             if not sheet_meta:
-                return requests
+                return None
+            basic_filter = sheet_meta.get("basicFilter")
+            if not basic_filter or not isinstance(basic_filter, dict):
+                return None
+            self._execute_batch_update(spreadsheet, [
+                {"clearBasicFilter": {"sheetId": worksheet.id}}
+            ])
+            return basic_filter
+        except Exception:
+            return None
 
-            basic_filter_request = self._build_basic_filter_request(sheet_meta, target_row)
-            if basic_filter_request:
-                requests.append(basic_filter_request)
-
-            filter_view_requests = self._build_filter_view_requests(sheet_meta, target_row)
-            requests.extend(filter_view_requests)
+    def _restore_basic_filter(
+        self, spreadsheet, worksheet, saved_filter: dict[str, Any] | None, target_row: int
+    ) -> None:
+        if not saved_filter:
+            return
+        try:
+            bf_range = (saved_filter.get("range") or {}).copy()
+            end_row_idx = bf_range.get("endRowIndex")
+            desired_end = max(int(end_row_idx or 0), int(target_row) + 1)
+            bf_range["endRowIndex"] = desired_end
+            restored_filter = saved_filter.copy()
+            restored_filter["range"] = bf_range
+            self._execute_batch_update(spreadsheet, [
+                {"setBasicFilter": {"filter": restored_filter}}
+            ])
         except Exception:
             pass
-        return requests
+
+    def _build_filter_view_expand_requests(
+        self, spreadsheet, worksheet, target_row: int
+    ) -> list[dict[str, Any]]:
+        try:
+            sheet_meta = self._find_sheet_metadata(spreadsheet, worksheet.id)
+            if not sheet_meta:
+                return []
+            return self._build_filter_view_requests(sheet_meta, target_row)
+        except Exception:
+            return []
 
     @staticmethod
     def _find_sheet_metadata(spreadsheet, sheet_id: int) -> dict[str, Any] | None:
@@ -301,10 +335,10 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
     def _choose_key_column(headers: list[str]) -> int:
         header_cells = [str(h).strip() for h in headers]
         for i, name in enumerate(header_cells, start=1):
-            if ("注文番号" in name) or ("発注番号" in name):
+            if "ASIN" in name:
                 return i
         for i, name in enumerate(header_cells, start=1):
-            if "ASIN" in name:
+            if ("注文番号" in name) or ("発注番号" in name):
                 return i
         return 1
 
