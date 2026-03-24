@@ -69,9 +69,12 @@ class PackingMaterialsSheet:
         raw_order_quantity = cls._normalize_cell_value(row.get(order_quantity_col, 0)) if order_quantity_col else 0
         raw_lot_size = cls._normalize_cell_value(row.get(lot_size_col, 1)) if lot_size_col else 1
 
-        price = 0.0 if pd.isna(raw_price) else float(raw_price) if str(raw_price).strip() != "" else 0.0
-        order_quantity = 0 if pd.isna(raw_order_quantity) else int(float(raw_order_quantity)) if str(raw_order_quantity).strip() != "" else 0
-        lot_size = 1 if pd.isna(raw_lot_size) else int(float(raw_lot_size)) if str(raw_lot_size).strip() != "" else 1
+        try:
+            price = 0.0 if pd.isna(raw_price) else float(raw_price) if str(raw_price).strip() != "" else 0.0
+            order_quantity = 0 if pd.isna(raw_order_quantity) else int(float(raw_order_quantity)) if str(raw_order_quantity).strip() != "" else 0
+            lot_size = 1 if pd.isna(raw_lot_size) else int(float(raw_lot_size)) if str(raw_lot_size).strip() != "" else 1
+        except (ValueError, TypeError):
+            return None
         
         return PackingMaterialsItem(
             material_name=material_name,

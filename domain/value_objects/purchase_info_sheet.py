@@ -120,9 +120,14 @@ class PurchaseInfoSheet:
         asin = str(row['ASIN']).strip()
         if not asin:  # 空行はスキップ
             return None
-        
+
         title = str(row['題名']).strip()
+        if not title:
+            return None
+
         purchase_url = str(row['購入先URL']).strip()
+        if not purchase_url:
+            return None
         color_size_spec = str(row['色・サイズ等指定']).strip() if pd.notna(row['色・サイズ等指定']) else ''
         quantity_per_item = int(row['1商品辺り発注数']) if pd.notna(row['1商品辺り発注数']) else 0
         unit_price = float(row['単価']) if pd.notna(row['単価']) else 0.0
