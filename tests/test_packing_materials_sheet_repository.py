@@ -29,3 +29,28 @@ def test_packing_materials_sheet_repository_clear_order_quantities_clears_only_t
     assert calls[1][0][0] == "B5:B5"
     assert calls[1][0][1] == [[""]]
 
+
+def test_clear_order_quantities_uses_exact_column_match():
+    mock_worksheet = Mock()
+    # 「1商品辺り発注数」が「発注数」より前にある構造（実際のシートに近い）
+    headers = ["資材名称", "URL", "商品名", "詳細", "価格", "1商品辺り発注数", "ロットサイズ", "発注数"]
+    mock_worksheet.get_all_values.return_value = [
+        ["1行目（無視）"] + [""] * 7,
+        headers,
+        ["OPP袋", "https://example.com/1", "袋", "", "10", "3", "1", "5"],
+        ["テープ", "https://example.com/2", "テープ", "", "20", "2", "1", "0"],
+    ]
+    mock_worksheet.update = Mock()
+
+    repo = SheetsPackingMaterialsSheetRepository("dummy.json", client=Mock())
+    repo.open_worksheet = Mock(return_value=mock_worksheet)
+
+    cleared = repo.clear_order_quantities("https://test.url", ["OPP袋"], sheet_name="使用資材")
+    assert cleared == 1
+
+    calls = mock_worksheet.update.call_args_list
+    assert len(calls) == 1
+    # 「発注数」はH列（8列目）であり、F列（「1商品辺り発注数」）ではない
+    assert calls[0][0][0] == "H3:H3"
+    assert calls[0][0][1] == [[""]]
+

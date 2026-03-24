@@ -18,8 +18,8 @@ class SheetsPackingMaterialsSheetRepository(BaseSheetsRepository):
         """
         for idx, row in enumerate(data):
             row_str = [str(c).strip() for c in row]
-            has_name = any("資材名称" in c for c in row_str)
-            has_qty = any("発注数" in c for c in row_str)
+            has_name = any(c == "資材名称" for c in row_str)
+            has_qty = any(c == "発注数" for c in row_str)
             if has_name and has_qty:
                 return idx
         return 1  # 2行目（0-based）
@@ -30,9 +30,9 @@ class SheetsPackingMaterialsSheetRepository(BaseSheetsRepository):
         idx_qty: int | None = None
         for i, col in enumerate(header_row):
             col_str = str(col).strip()
-            if idx_name is None and "資材名称" in col_str:
+            if idx_name is None and col_str == "資材名称":
                 idx_name = i
-            if idx_qty is None and "発注数" in col_str:
+            if idx_qty is None and col_str == "発注数":
                 idx_qty = i
         if idx_name is None:
             idx_name = 0
