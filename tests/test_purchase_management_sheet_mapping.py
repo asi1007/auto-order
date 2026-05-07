@@ -176,6 +176,62 @@ def test_purchase_management_sheet_repository_copies_formulas_from_previous_row_
         assert cp["destination"]["startRowIndex"] == 6  # target_row=7
 
 
+def test_purchase_management_sheet_repository_does_not_copy_formula_for_plan_alias():
+    """プラン別名 列は前行が数式でも空白のまま（数式コピー対象外）"""
+    mock_worksheet = Mock()
+    mock_worksheet.row_values.return_value = ["ASIN", "商品名", "プラン別名", "購入数"]
+    mock_worksheet.row_count = 100
+    mock_worksheet.id = 123
+    mock_worksheet.get.side_effect = [
+        [["x"], ["y"]],  # key column scan -> target_row=7
+        [["", "", '=VLOOKUP(D6,$Z:$AA,2,FALSE)', ""]],  # 前行: プラン別名が数式
+    ]
+    mock_worksheet.update = Mock()
+    mock_worksheet.add_rows = Mock()
+
+    mock_spreadsheet = Mock()
+    mock_spreadsheet.worksheet.return_value = mock_worksheet
+    mock_spreadsheet.fetch_sheet_metadata.return_value = {"sheets": []}
+    mock_spreadsheet.batch_update = Mock()
+
+    mock_client = Mock()
+    mock_client.open_by_url.return_value = mock_spreadsheet
+
+    repo = SheetsPurchaseManagementRepository(
+        "dummy.json",
+        "https://example.com/sheet",
+        sheet_name="仕入管理",
+        client=mock_client,
+    )
+
+    item = PurchaseManagementItem(
+        purchase_date="2025-01-01",
+        order_number="2025-12345678",
+        asin="A1",
+        product_name="売上商品",
+        url="",
+        detail="",
+        quantity=3,
+        image_text="",
+        remark_text="",
+        delivery_category="",
+        unit_price=None,
+        total_price=None,
+        material_name="",
+    )
+
+    repo.append(item)
+
+    # プラン別名 列(0-based 2)は数式コピーリクエストに含まれないこと
+    if mock_spreadsheet.batch_update.called:
+        body = mock_spreadsheet.batch_update.call_args[0][0]
+        copy_pastes = [r["copyPaste"] for r in body["requests"] if "copyPaste" in r]
+        for cp in copy_pastes:
+            assert not (cp["source"]["startColumnIndex"] <= 2 < cp["source"]["endColumnIndex"]), (
+                f"プラン別名 列(idx=2)は数式コピー対象外であること: {cp}"
+            )
+
+
 def test_purchase_management_sheet_repository_expands_basic_filter_range_to_new_row():
     mock_worksheet = Mock()
     mock_worksheet.row_values.return_value = ["購入先", "購入数", "通貨", "商品名", "納品分類"]

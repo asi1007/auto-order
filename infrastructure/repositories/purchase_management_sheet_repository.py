@@ -43,6 +43,10 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
         "行番号",
     }
 
+    NEVER_COPY_FORMULA_COLUMNS: set[str] = {
+        "プラン別名",
+    }
+
     def __init__(self, credentials_file: str, sheet_url: str, sheet_name: str | None = None, client=None):
         super().__init__(credentials_file=credentials_file, client=client)
         self.sheet_url = sheet_url
@@ -164,8 +168,11 @@ class SheetsPurchaseManagementRepository(BaseSheetsRepository):
         if not is_formula:
             return False
 
-        is_empty_now = str(row_values[idx]).strip() == "" if idx < len(row_values) else True
         header_name = header_cells[idx].strip() if idx < len(header_cells) else ""
+        if header_name in self.NEVER_COPY_FORMULA_COLUMNS:
+            return False
+
+        is_empty_now = str(row_values[idx]).strip() == "" if idx < len(row_values) else True
         is_formula_only_column = header_name in self.FORMULA_ONLY_COLUMNS
 
         if is_formula_only_column:
