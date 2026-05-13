@@ -229,6 +229,22 @@ class TestOrderAutomation:
         result = automation._extract_order_number(mock_page)
         assert result is None or isinstance(result, str)
 
+    def test_extract_order_number_new_format(self, automation):
+        mock_page = MagicMock()
+        mock_page.content.return_value = "注文番号： Y0806-260513008 コピー"
+        mock_page.url = f"{BASE_URL}/order/list"
+
+        result = automation._extract_order_number(mock_page)
+        assert result == "Y0806-260513008"
+
+    def test_extract_order_number_history_new_format(self, automation):
+        mock_page = MagicMock()
+        mock_page.content.return_value = "注文番号： Y0806-260513008 コピー"
+        mock_page.url = f"{BASE_URL}/order/list"
+
+        result = automation._get_latest_order_number_from_history(mock_page)
+        assert result == "Y0806-260513008"
+
 
 class TestOrderAutomationIntegration:
 

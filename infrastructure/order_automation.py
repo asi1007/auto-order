@@ -225,7 +225,11 @@ class OrderAutomation:
             self.logger.error(f"    ✗ 注文確認処理中にエラーが発生しました: {e}")
             raise
 
-    ORDER_NUMBER_PATTERN = r"(P\d{6,12}YP\d+)"
+    # YP の注文番号フォーマット:
+    #   - 旧: P260226013YP806（P + 9桁 + YP + 数字）
+    #   - 新: Y0806-260513008（Y + 会員ID + ハイフン + 日付6桁 + 連番3桁）
+    # 両方マッチさせる（YP 側 UI 移行期に旧形式が残る可能性に備える）
+    ORDER_NUMBER_PATTERN = r"(Y\d+-\d{6,12}|P\d{6,12}YP\d+)"
 
     def _extract_order_number(self, page: Page) -> Optional[str]:
         try:
