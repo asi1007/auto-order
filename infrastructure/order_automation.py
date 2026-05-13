@@ -225,6 +225,8 @@ class OrderAutomation:
             self.logger.error(f"    ✗ 注文確認処理中にエラーが発生しました: {e}")
             raise
 
+    ORDER_NUMBER_PATTERN = r"(P\d{6,12}YP\d+)"
+
     def _extract_order_number(self, page: Page) -> Optional[str]:
         try:
             order_number = self._wait_for_order_number_on_page(page)
@@ -234,40 +236,59 @@ class OrderAutomation:
             order_number = self._get_latest_order_number_from_history(page)
             if order_number:
                 return order_number
+
+            self._dump_page_for_debug(page, reason="order_number_not_found")
         except Exception:
             return None
         return None
 
     def _wait_for_order_number_on_page(self, page: Page) -> Optional[str]:
         try:
-            locator = page.locator("text=注文番号").first
-            locator.wait_for(state="visible", timeout=10000)
-            time.sleep(1)
-
-            html = page.content()
-            match = re.search(r"(P\d{9}YP\d+)", html)
-            if match:
-                return match.group(1)
+            page.wait_for_load_state("networkidle", timeout=10000)
         except Exception:
             pass
-        return None
+        try:
+            page.wait_for_function(
+                f"() => /{self.ORDER_NUMBER_PATTERN}/.test(document.body.innerText)",
+                timeout=10000,
+            )
+        except Exception:
+            return None
+
+        match = re.search(self.ORDER_NUMBER_PATTERN, page.content())
+        return match.group(1) if match else None
 
     def _get_latest_order_number_from_history(self, page: Page) -> Optional[str]:
         try:
             page.goto(f"{BASE_URL}/order/list", timeout=30000, wait_until="domcontentloaded")
             page.wait_for_load_state("networkidle", timeout=30000)
+            page.wait_for_function(
+                f"() => /{self.ORDER_NUMBER_PATTERN}/.test(document.body.innerText)",
+                timeout=15000,
+            )
 
-            locator = page.locator("text=注文番号").first
-            locator.wait_for(state="visible", timeout=10000)
-            time.sleep(1)
-
-            html = page.content()
-            matches = re.findall(r"(P\d{9}YP\d+)", html)
+            matches = re.findall(self.ORDER_NUMBER_PATTERN, page.content())
             if matches:
                 return matches[0]
         except Exception:
             return None
         return None
+
+    def _dump_page_for_debug(self, page: Page, reason: str) -> None:
+        try:
+            debug_dir = os.path.join(os.getcwd(), "logs", "debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            prefix = os.path.join(debug_dir, f"{timestamp}_{reason}")
+            with open(f"{prefix}.html", "w", encoding="utf-8") as f:
+                f.write(page.content())
+            page.screenshot(path=f"{prefix}.png", full_page=True)
+            self.logger.warning(
+                "    デバッグ用ページダンプを保存: %s.html / .png (URL: %s)",
+                prefix, page.url,
+            )
+        except Exception as e:
+            self.logger.debug("ページダンプ保存に失敗: %s", e)
 
     @staticmethod
     def _extract_store_name(purchase_url: str) -> str:
