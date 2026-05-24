@@ -22,8 +22,7 @@ def order_items():
 
     try:
         order_list = get_order_data(config.credentials_file, config.sales_url, config.purchase_url)
-        # 新UI (2026-05〜) では複数商品の同一注文が複雑なため、暫定的に 1商品=1注文 で送信する
-        order_groups = group_orders_by_url(order_list, max_items_per_group=1)
+        order_groups = group_orders_by_url(order_list, max_items_per_group=5)
         results = automation.process_orders(order_groups)
 
         record_purchase_management(

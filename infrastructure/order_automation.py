@@ -147,6 +147,9 @@ class OrderAutomation:
     PLACEHOLDER_SPEC_NOTE = "仕様備考"
 
     def _fill_order_items(self, page: Page, order_group: List[Order]):
+        # 新UI構造: 1店舗 × N商品（同一URLグループでも各ASINを別 商品 ブロックとして扱う）。
+        # 店舗名は1つだけ（idx=0で1回入力）。
+        # 2件目以降は「+商品」ボタンでブロックを追加し、URL/商品名/数量/単価/仕様備考を nth(idx) で埋める。
         for idx, order_info in enumerate(order_group):
             item_identifier = order_info.asin or order_info.product_name or f"商品{idx+1}"
             self.logger.info(
@@ -156,11 +159,12 @@ class OrderAutomation:
                 order_info.order_quantity,
             )
 
-            if idx > 0:
+            if idx == 0:
+                store_name = self._extract_store_name(order_info.purchase_url)
+                self._fill_placeholder_nth(page, self.PLACEHOLDER_STORE_NAME, 0, store_name)
+            else:
                 self._add_product_row(page)
 
-            store_name = self._extract_store_name(order_info.purchase_url)
-            self._fill_placeholder_nth(page, self.PLACEHOLDER_STORE_NAME, idx, store_name)
             self._fill_placeholder_nth(page, self.PLACEHOLDER_URL, idx, order_info.purchase_url)
             self._fill_placeholder_nth(page, self.PLACEHOLDER_PRODUCT_NAME, idx, order_info.product_name)
             self._fill_placeholder_nth(page, self.PLACEHOLDER_QUANTITY, idx, str(order_info.order_quantity))

@@ -91,8 +91,7 @@ def order_packing_materials():
         order_list = get_packing_materials_order_data(credentials_file, packing_materials_url, packing_materials_sheet_name)
         assert order_list, "order_listは空であってはなりません"
 
-        # 新UI (2026-05〜) では複数商品の同一注文が複雑なため、暫定的に 1商品=1注文 で送信する
-        order_groups = group_orders_by_url(order_list, max_items_per_group=1)
+        order_groups = group_orders_by_url(order_list, max_items_per_group=5)
         assert order_groups, "order_groupsは空であってはなりません"
 
         results = automation.process_orders(order_groups)
