@@ -108,6 +108,49 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
     return items
 
 
+def _merge_same_asin_across_groups(items: list[PurchaseManagementItem]) -> PurchaseManagementItem:
+    """同一ASINで複数注文番号にまたがる items を1行に統合する。
+    Why: Amazon の1製品（同一ASIN）が複数のサプライヤー注文に分かれた場合、
+         仕入管理シートは1行で表現するのが正しい運用（主部材+補助部材を合算しない）。
+    Strategy:
+      - 注文番号: 改行(\n)区切りで併記
+      - 数量/単価/売値/分類等: 「総額（数量×単価）が最大の item」= 主部材 から採用
+      - URL/画像/備考: 全itemから unique 結合
+    """
+    if len(items) == 1:
+        return items[0]
+
+    def _total_cost(i: PurchaseManagementItem) -> float:
+        return float(i.quantity or 0) * float(i.unit_price or 0)
+
+    main = max(items, key=_total_cost)
+    order_numbers_joined = _join_unique_text([i.order_number for i in items], sep="\n")
+
+    return PurchaseManagementItem(
+        purchase_date=main.purchase_date,
+        order_number=order_numbers_joined,
+        asin=main.asin,
+        product_name=main.product_name,
+        url=_join_unique_text([i.url for i in items], sep="\n"),
+        detail=_join_unique_text([i.detail for i in items], sep=" / "),
+        image_text=_join_unique_text([i.image_text for i in items], sep="\n"),
+        remark_text=_join_unique_text([i.remark_text for i in items], sep="\n"),
+        delivery_category=main.delivery_category,
+        quantity=main.quantity,
+        unit_price=main.unit_price,
+        unit_price_jpy=main.unit_price_jpy,
+        selling_price=main.selling_price,
+        total_price=main.total_price,
+        material_name=main.material_name,
+        local_price=main.local_price,
+        purchase_price_jpy=main.purchase_price_jpy,
+        weight=main.weight,
+        height=main.height,
+        length=main.length,
+        width=main.width,
+    )
+
+
 def record_purchase_management(
     credentials_file: str,
     management_sheet_url: str,
@@ -128,21 +171,29 @@ def record_purchase_management(
             client=base.client,
         )
 
-        total_recorded = 0
+        # 全グループ横断で ASIN ごとに items を集約。
+        # 同一ASINが複数注文番号にまたがる場合、シート書き込み前に1行に統合する。
+        items_by_asin: dict[str, list[PurchaseManagementItem]] = defaultdict(list)
         for result in order_groups:
             order_number = result.order_number or ""
             items = _to_purchase_management_items_by_asin(result.order_group, order_number=order_number)
             for item in items:
-                try:
-                    repository.append(item)
-                    total_recorded += 1
-                except Exception as e:
-                    logger.warning(
-                        "仕入管理の記録に失敗しました（ASIN: %s）: %s",
-                        getattr(item, "asin", "不明"),
-                        e,
-                    )
-                    continue
+                items_by_asin[item.asin].append(item)
+
+        merged_items = [_merge_same_asin_across_groups(items) for items in items_by_asin.values()]
+
+        total_recorded = 0
+        for item in merged_items:
+            try:
+                repository.append(item)
+                total_recorded += 1
+            except Exception as e:
+                logger.warning(
+                    "仕入管理の記録に失敗しました（ASIN: %s）: %s",
+                    getattr(item, "asin", "不明"),
+                    e,
+                )
+                continue
 
         logger.info("✓ %s件の仕入管理を記録しました", total_recorded)
     except Exception as e:

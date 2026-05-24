@@ -180,4 +180,80 @@ class TestRecordPurchaseManagement:
         item = repository_instance.append.call_args_list[0][0][0]
         assert item.selling_price is None
 
+    def test_merges_same_asin_across_groups_into_one_row_with_newline_separated_orders(self):
+        """同一ASIN（B0FCHM6QQR）が別グループ・別注文番号で発注された場合、
+        仕入管理シートには 1 行 + 注文番号は改行(\\n)区切りで併記される。"""
+        # グループ1: 主部材 (qty=600 × unit=10.6 = 6360 が最大総額)
+        main_orders = [
+            Order(
+                asin="B0FCHM6QQR",
+                product_name="主部材",
+                sales_product_name="A4 アクリルフォトフレーム",
+                purchase_url="https://detail.1688.com/offer/802957666380.html",
+                order_quantity=600,
+                sales_order_quantity=600,
+                unit_price=10.6,
+                image_text="img_main",
+                remark_text="",
+                delivery_category="特別",
+                lot_size=1,
+                quantity_per_item=1,
+            ),
+        ]
+        # グループ2: 補助部材 (qty=600 × unit=0.98 = 588 で総額小さい)
+        sub_orders = [
+            Order(
+                asin="B0FCHM6QQR",
+                product_name="補助部材",
+                sales_product_name="A4 アクリルフォトフレーム",
+                purchase_url="https://detail.1688.com/offer/570972837245.html",
+                order_quantity=600,
+                sales_order_quantity=600,
+                unit_price=0.98,
+                image_text="img_sub",
+                remark_text="",
+                delivery_category="",
+                lot_size=1,
+                quantity_per_item=1,
+            ),
+        ]
+        results = [
+            OrderGroup(order_group=main_orders, order_number="Y0806-260524011"),
+            OrderGroup(order_group=sub_orders, order_number="Y0806-260524012"),
+        ]
+
+        base_mock = MagicMock()
+        base_mock.client = MagicMock()
+        repository_instance = MagicMock()
+
+        with patch(
+            "infrastructure.purchase_management_recorder.BaseSheetsRepository",
+            return_value=base_mock,
+        ), patch(
+            "infrastructure.purchase_management_recorder.SheetsPurchaseManagementRepository",
+            return_value=repository_instance,
+        ):
+            record_purchase_management(
+                credentials_file="creds.json",
+                management_sheet_url="https://example.com/sheet?gid=1#gid=1",
+                order_groups=results,
+                management_sheet_name="仕入管理",
+            )
+
+        # 1 行に統合されること
+        assert repository_instance.append.call_count == 1
+        item = repository_instance.append.call_args_list[0][0][0]
+
+        # 注文番号が改行区切りで併記される
+        assert item.order_number == "Y0806-260524011\nY0806-260524012"
+
+        # 値は主部材（最大総額）から
+        assert item.quantity == 600
+        assert item.unit_price == 10.6 * 1  # quantity_per_item=1
+
+        # URL は両方が改行で併記される
+        assert "802957666380" in item.url
+        assert "570972837245" in item.url
+        assert "\n" in item.url
+
 
