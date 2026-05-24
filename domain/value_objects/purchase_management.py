@@ -29,5 +29,9 @@ class PurchaseManagementItem:
     local_price: float | None = None
     # 購入価格（円換算）
     purchase_price_jpy: float | None = None
+    weight: str = ""
+    height: str = ""
+    length: str = ""
+    width: str = ""
 
 

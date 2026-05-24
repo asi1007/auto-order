@@ -72,19 +72,30 @@ class TestChatworkClient:
         client = ChatworkClient(api_token="token", default_room_id="123")
         assert client.send_order_notification("123", "", "", "") is False
 
-    def test_to_direct_download_url_google_drive_file(self):
+    def test_extract_drive_file_id_from_file_url(self):
         url = "https://drive.google.com/file/d/1aBcDeFgHiJkLmN/view?usp=sharing"
-        result = ChatworkClient._to_direct_download_url(url)
-        assert result == "https://drive.google.com/uc?export=download&id=1aBcDeFgHiJkLmN"
+        assert ChatworkClient._extract_drive_file_id(url) == "1aBcDeFgHiJkLmN"
 
-    def test_to_direct_download_url_google_drive_open(self):
-        url = "https://drive.google.com/open?id=1aBcDeFgHiJkLmN"
-        result = ChatworkClient._to_direct_download_url(url)
-        assert result == "https://drive.google.com/uc?export=download&id=1aBcDeFgHiJkLmN"
+    def test_extract_drive_file_id_from_open_url(self):
+        url = "https://drive.google.com/open?id=1aBcDeFgHiJkLmN&usp=drive_fs"
+        assert ChatworkClient._extract_drive_file_id(url) == "1aBcDeFgHiJkLmN"
 
-    def test_to_direct_download_url_non_google_drive(self):
+    def test_extract_drive_file_id_non_drive_url(self):
         url = "https://example.com/image.png"
-        result = ChatworkClient._to_direct_download_url(url)
-        assert result == url
+        assert ChatworkClient._extract_drive_file_id(url) is None
+
+    @patch("infrastructure.chatwork_client.ChatworkClient._download_from_google_drive")
+    def test_download_to_temp_uses_drive_api_for_drive_urls(self, mock_drive: MagicMock):
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            f.write(b"fake")
+            tmp_path = f.name
+        mock_drive.return_value = tmp_path
+
+        client = ChatworkClient(api_token="t", google_credentials_file="creds.json")
+        result = client._download_to_temp("https://drive.google.com/open?id=ABC123")
+
+        mock_drive.assert_called_once_with("ABC123")
+        assert result == tmp_path
+        os.unlink(tmp_path)
 
 

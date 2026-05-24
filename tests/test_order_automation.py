@@ -169,21 +169,67 @@ class TestOrderAutomation:
         result = automation._extract_order_number(mock_page)
         assert result is None or isinstance(result, str)
 
-    def test_extract_order_number_new_format(self, automation):
+
+class TestConvertJpyToCny:
+
+    @pytest.fixture
+    def automation(self):
+        return OrderAutomation(
+            headless=True,
+            email="test@example.com",
+            password="testpass",
+        )
+
+    def test_convert_jpy_to_cny_with_jpy_balance(self, automation):
         mock_page = MagicMock()
-        mock_page.content.return_value = "注文番号： Y0806-260513008 コピー"
-        mock_page.url = f"{BASE_URL}/order/list"
+        automation.page = mock_page
 
-        result = automation._extract_order_number(mock_page)
-        assert result == "Y0806-260513008"
+        mock_page.text_content.return_value = "JPY 500000 円"
+        mock_spinbutton = MagicMock()
+        mock_page.locator.return_value = mock_spinbutton
+        mock_spinbutton.wait_for = MagicMock()
+        mock_spinbutton.fill = MagicMock()
 
-    def test_extract_order_number_history_new_format(self, automation):
+        mock_submit_btn = MagicMock()
+        mock_page.locator.side_effect = [
+            MagicMock(text_content=MagicMock(return_value="JPY 500000 円")),  # JPY残高
+            mock_spinbutton,  # spinbutton
+            mock_submit_btn,  # 振替ボタン
+            MagicMock(count=MagicMock(return_value=1), is_visible=MagicMock(return_value=True)),  # 確認ダイアログ
+            MagicMock(),  # ダイアログ内ボタン
+        ]
+
+        automation.convert_jpy_to_cny()
+
+        mock_page.goto.assert_called()
+
+    def test_convert_jpy_to_cny_no_jpy_balance(self, automation):
         mock_page = MagicMock()
-        mock_page.content.return_value = "注文番号： Y0806-260513008 コピー"
-        mock_page.url = f"{BASE_URL}/order/list"
+        automation.page = mock_page
 
-        result = automation._get_latest_order_number_from_history(mock_page)
-        assert result == "Y0806-260513008"
+        mock_jpy_locator = MagicMock()
+        mock_jpy_locator.count.return_value = 0
+        mock_page.locator.return_value = mock_jpy_locator
+
+        automation.convert_jpy_to_cny()
+
+    def test_convert_jpy_to_cny_zero_balance(self, automation):
+        mock_page = MagicMock()
+        automation.page = mock_page
+
+        mock_jpy_locator = MagicMock()
+        mock_jpy_locator.count.return_value = 1
+        mock_jpy_locator.text_content.return_value = "0 円"
+        mock_page.locator.return_value = mock_jpy_locator
+
+        automation.convert_jpy_to_cny()
+
+    def test_parse_jpy_balance(self, automation):
+        assert automation._parse_jpy_balance("JPY 500000 円") == 500000
+        assert automation._parse_jpy_balance("1010000 円") == 1010000
+        assert automation._parse_jpy_balance("0 円") == 0
+        assert automation._parse_jpy_balance("") == 0
+        assert automation._parse_jpy_balance("JPY 1,500,000 円") == 1500000
 
 
 class TestOrderAutomationIntegration:

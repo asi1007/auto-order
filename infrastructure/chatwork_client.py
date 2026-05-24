@@ -2,6 +2,7 @@
 Chatwork APIクライアント
 """
 
+import re
 import tempfile
 import requests
 from typing import Optional
@@ -17,16 +18,20 @@ if TYPE_CHECKING:
 
 
 class ChatworkClient:
-    def __init__(self, api_token: str, default_room_id: str = "397092794"):
+    def __init__(self, api_token: str, default_room_id: str = "397092794",
+                 google_credentials_file: str = ""):
         self.api_token = api_token
         self.base_url = "https://api.chatwork.com/v2"
         self.default_room_id = default_room_id
+        self.google_credentials_file = google_credentials_file
 
     @classmethod
     def from_env(cls) -> "ChatworkClient":
         api_token = os.getenv("CHATWORK_API_TOKEN", "")
         room_id = os.getenv("CHATWORK_ROOM_ID", "397092794")
-        return cls(api_token=api_token, default_room_id=room_id)
+        google_credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE", "")
+        return cls(api_token=api_token, default_room_id=room_id,
+                   google_credentials_file=google_credentials_file)
 
     def post_message(self, room_id: str, message: str) -> bool:
         if not self.api_token:
@@ -68,26 +73,60 @@ class ChatworkClient:
             return False
 
     @staticmethod
-    def _to_direct_download_url(url: str) -> str:
-        import re
+    def _extract_drive_file_id(url: str) -> Optional[str]:
         match = re.search(r"drive\.google\.com/file/d/([^/]+)", url)
         if match:
-            file_id = match.group(1)
-            return f"https://drive.google.com/uc?export=download&id={file_id}"
+            return match.group(1)
         match = re.search(r"drive\.google\.com/open\?id=([^&]+)", url)
         if match:
-            file_id = match.group(1)
-            return f"https://drive.google.com/uc?export=download&id={file_id}"
-        return url
+            return match.group(1)
+        return None
+
+    def _download_from_google_drive(self, file_id: str) -> Optional[str]:
+        from oauth2client.service_account import ServiceAccountCredentials
+        import httplib2
+
+        scopes = ["https://www.googleapis.com/auth/drive.readonly"]
+        credentials = ServiceAccountCredentials.from_json_keyfile_name(
+            self.google_credentials_file, scopes
+        )
+        http = credentials.authorize(httplib2.Http())
+        metadata_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?fields=name,mimeType"
+        resp, content = http.request(metadata_url)
+        if resp.status != 200:
+            logger.error(f"Google Driveファイル情報取得に失敗 (file_id={file_id}): {resp.status}")
+            return None
+
+        import json
+        meta = json.loads(content)
+        mime = meta.get("mimeType", "")
+        name = meta.get("name", "file")
+        ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+        ext = ext_map.get(mime, os.path.splitext(name)[1] or ".png")
+
+        download_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+        resp, content = http.request(download_url)
+        if resp.status != 200:
+            logger.error(f"Google Driveファイルダウンロードに失敗 (file_id={file_id}): {resp.status}")
+            return None
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+        tmp.write(content)
+        tmp.close()
+        logger.info(f"✓ Google Driveから画像をダウンロードしました (file_id={file_id})")
+        return tmp.name
 
     def _download_to_temp(self, url: str) -> Optional[str]:
         try:
-            download_url = self._to_direct_download_url(url)
-            response = requests.get(download_url, timeout=30)
+            drive_file_id = self._extract_drive_file_id(url)
+            if drive_file_id and self.google_credentials_file:
+                return self._download_from_google_drive(drive_file_id)
+
+            response = requests.get(url, timeout=30)
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "")
             if "text/html" in content_type:
-                logger.error(f"画像ではなくHTMLが返されました（共有設定を確認してください）: {url}")
+                logger.error(f"画像ではなくHTMLが返されました: {url}")
                 return None
             ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
             ext = ext_map.get(content_type.split(";")[0], "")

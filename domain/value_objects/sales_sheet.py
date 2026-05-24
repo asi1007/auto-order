@@ -15,7 +15,11 @@ class SalesItem:
     image_text: str = ""
     remark_text: str = ""
     delivery_category: str = ""
-    
+    weight: str = ""
+    height: str = ""
+    length: str = ""
+    width: str = ""
+
     def __post_init__(self):
         if not self.asin or not self.asin.strip():
             raise ValueError("ASINは必須です")
@@ -67,6 +71,10 @@ class SalesSheet:
             image_text = str(row['画像']).strip() if '画像' in df.columns and pd.notna(row.get('画像')) else ""
             remark_text = str(row['備考']).strip() if '備考' in df.columns and pd.notna(row.get('備考')) else ""
             delivery_category = str(row['納品分類']).strip() if '納品分類' in df.columns and pd.notna(row.get('納品分類')) else ""
+            weight = str(row['重量']).strip() if '重量' in df.columns and pd.notna(row.get('重量')) else ""
+            height = str(row['高さ']).strip() if '高さ' in df.columns and pd.notna(row.get('高さ')) else ""
+            length = str(row['縦']).strip() if '縦' in df.columns and pd.notna(row.get('縦')) else ""
+            width = str(row['横']).strip() if '横' in df.columns and pd.notna(row.get('横')) else ""
             if asin:  # 空行はスキップ
                 items.append(
                     SalesItem(
@@ -76,6 +84,10 @@ class SalesSheet:
                         image_text=image_text,
                         remark_text=remark_text,
                         delivery_category=delivery_category,
+                        weight=weight,
+                        height=height,
+                        length=length,
+                        width=width,
                     )
                 )
         return cls(items=items)

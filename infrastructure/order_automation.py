@@ -124,10 +124,89 @@ class OrderAutomation:
         except Exception as e:
             raise Exception(f"ログイン処理中にエラーが発生しました: {e}")
 
+    def _parse_jpy_balance(self, text: str) -> int:
+        if not text:
+            return 0
+        cleaned = re.sub(r"[^\d]", "", text)
+        return int(cleaned) if cleaned else 0
+
+    def _log_balance(self) -> None:
+        try:
+            self._goto_with_retry(f"{BASE_URL}/home")
+            time.sleep(2)
+
+            cny_locator = self.page.locator("text=/CNY.*元/")
+            jpy_locator = self.page.locator("text=/JPY.*円/")
+
+            cny_text = cny_locator.first.text_content().strip() if cny_locator.count() > 0 else "取得不可"
+            jpy_text = jpy_locator.first.text_content().strip() if jpy_locator.count() > 0 else "取得不可"
+
+            cny_match = re.search(r"CNY\s*([\d,.]+)", cny_text)
+            jpy_match = re.search(r"JPY\s*([\d,.]+)", jpy_text)
+            cny_balance = cny_match.group(1) if cny_match else cny_text
+            jpy_balance = jpy_match.group(1) if jpy_match else jpy_text
+
+            self.logger.info("💰 発注後残高: CNY %s 元 / JPY %s 円", cny_balance, jpy_balance)
+        except Exception as e:
+            self.logger.warning("残高取得に失敗しました: %s", e)
+
+    def convert_jpy_to_cny(self) -> None:
+        try:
+            self.logger.info("日本円残高を確認しています...")
+            self._goto_with_retry(f"{BASE_URL}/home")
+            time.sleep(2)
+
+            jpy_locator = self.page.locator("text=/JPY.*円/")
+            if jpy_locator.count() == 0:
+                self.logger.info("日本円残高が見つかりません。両替をスキップします")
+                return
+
+            jpy_text = jpy_locator.first.text_content()
+            jpy_balance = self._parse_jpy_balance(jpy_text)
+
+            if jpy_balance <= 0:
+                self.logger.info("日本円残高が0円のため、両替をスキップします")
+                return
+
+            self.logger.info("日本円残高: %s円 → 全額を中国元に両替します", jpy_balance)
+
+            spinbutton = self.page.get_by_role("spinbutton")
+            spinbutton.wait_for(state="visible", timeout=10000)
+            spinbutton.fill(str(jpy_balance))
+            time.sleep(1)
+
+            submit_btn = self.page.locator('button:has-text("振替を実行する")')
+            submit_btn.wait_for(state="visible", timeout=10000)
+            submit_btn.click()
+            time.sleep(2)
+
+            dialog = self.page.get_by_role("dialog")
+            dialog.wait_for(state="visible", timeout=10000)
+            self.logger.info("確認ダイアログが表示されました。承認します...")
+            confirm_btn = dialog.locator('button:has-text("確定")')
+            confirm_btn.wait_for(state="visible", timeout=10000)
+            confirm_btn.click()
+            self.page.wait_for_load_state("networkidle", timeout=30000)
+            time.sleep(2)
+
+            self.logger.info("✓ 両替が完了しました（%s円 → 中国元）", jpy_balance)
+
+        except Exception as e:
+            self.logger.warning("両替処理中にエラーが発生しました（発注処理は継続します）: %s", e)
+
+    def _reset_order_form(self, page: Page) -> None:
+        reset_btn = page.locator('button:has-text("リセット")')
+        if reset_btn.count() > 0 and reset_btn.is_visible():
+            reset_btn.click()
+            page.wait_for_load_state("networkidle", timeout=10000)
+            time.sleep(1)
+            self.logger.info("  ✓ フォームをリセットしました")
+
     def fill_order_form(self, order_group: List[Order]) -> Optional[str]:
         try:
             self._goto_with_retry(f"{BASE_URL}/manual")
             time.sleep(1)
+            self._reset_order_form(self.page)
             self.logger.info("✓ 手動注文ページを開きました")
 
             self._fill_order_items(self.page, order_group)
@@ -138,7 +217,7 @@ class OrderAutomation:
             self._dump_page_for_debug(self.page, reason="fill_failure")
             raise
 
-    # YP の新UI (2026-05〜) フィールド placeholder
+    # YP の新UI (2026-05 以降) フィールド placeholder
     PLACEHOLDER_STORE_NAME = "店舗名を入力してください"
     PLACEHOLDER_URL = "製品のURLを入力してください。"
     PLACEHOLDER_PRODUCT_NAME = "商品名を入力してください"
@@ -337,10 +416,7 @@ class OrderAutomation:
             with open(f"{prefix}.html", "w", encoding="utf-8") as f:
                 f.write(page.content())
             page.screenshot(path=f"{prefix}.png", full_page=True)
-            self.logger.warning(
-                "    デバッグ用ページダンプを保存: %s.html / .png (URL: %s)",
-                prefix, page.url,
-            )
+            self.logger.warning("    デバッグ用ページダンプを保存: %s.html / .png (URL: %s)", prefix, page.url)
         except Exception as e:
             self.logger.debug("ページダンプ保存に失敗: %s", e)
 
@@ -369,6 +445,8 @@ class OrderAutomation:
                 self.close_browser()
                 return []
 
+        self.convert_jpy_to_cny()
+
         total_items = sum(len(group) for group in order_groups)
         self.logger.info(f"{len(order_groups)}グループ（合計{total_items}商品）の注文を処理します...")
 
@@ -386,6 +464,7 @@ class OrderAutomation:
             time.sleep(2)
 
         self.logger.info("すべての注文フォームへの入力が完了しました")
+        self._log_balance()
         self.close_browser()
         self.logger.info("処理が完了しました")
         return results

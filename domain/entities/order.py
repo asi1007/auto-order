@@ -23,6 +23,10 @@ class Order:
     lot_size: int = 1
     quantity_per_item: int = 1
     selling_price: float | None = None
+    weight: str = ""
+    height: str = ""
+    length: str = ""
+    width: str = ""
 
     @property
     def normalized_purchase_url(self) -> str:

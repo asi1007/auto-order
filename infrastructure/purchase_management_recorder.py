@@ -77,6 +77,10 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
         remark_text = _join_unique_text([o.remark_text for o in grouped], sep="\n")
         delivery_category = _join_unique_text([o.delivery_category for o in grouped], sep=" / ")
         material_name = _join_unique_text([o.material_name for o in grouped], sep=" / ")
+        weight = _join_unique_text([o.weight for o in grouped], sep=" / ")
+        height = _join_unique_text([o.height for o in grouped], sep=" / ")
+        length = _join_unique_text([o.length for o in grouped], sep=" / ")
+        width = _join_unique_text([o.width for o in grouped], sep=" / ")
 
         # 販売価格は同一ASINなので最初のOrderの値を使う
         selling_price: float | None = None
@@ -102,6 +106,10 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
                 unit_price_jpy=unit_price_jpy,
                 selling_price=selling_price,
                 material_name=material_name,
+                weight=weight,
+                height=height,
+                length=length,
+                width=width,
             )
         )
 

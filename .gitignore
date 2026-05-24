@@ -53,3 +53,9 @@ htmlcov/
 *.pyc
 
 
+
+# Playwright MCP browser logs
+.playwright-mcp/
+
+# Runtime debug dumps from order automation failures
+logs/
