@@ -135,94 +135,140 @@ class OrderAutomation:
 
         except Exception as e:
             self.logger.error(f"✗ 注文グループの入力中にエラーが発生しました: {e}")
+            self._dump_page_for_debug(self.page, reason="fill_failure")
             raise
 
+    # YP の新UI (2026-05〜) フィールド placeholder
+    PLACEHOLDER_STORE_NAME = "店舗名を入力してください"
+    PLACEHOLDER_URL = "製品のURLを入力してください。"
+    PLACEHOLDER_PRODUCT_NAME = "商品名を入力してください"
+    PLACEHOLDER_QUANTITY = "数量"
+    PLACEHOLDER_UNIT_PRICE = "単価"
+    PLACEHOLDER_SPEC_NOTE = "仕様備考"
+
     def _fill_order_items(self, page: Page, order_group: List[Order]):
-        for idx, order_info in enumerate(order_group, 1):
-            item_identifier = order_info.asin or order_info.product_name or f"商品{idx}"
+        for idx, order_info in enumerate(order_group):
+            item_identifier = order_info.asin or order_info.product_name or f"商品{idx+1}"
             self.logger.info(
                 "  商品%s: %s を入力中...（数量: %s）",
-                idx,
+                idx + 1,
                 item_identifier,
                 order_info.order_quantity,
             )
 
-            page.click('button:has-text("商品を追加")')
-            time.sleep(1)
-
-            rows = page.locator("tr")
-            data_row = rows.last
-            tds = data_row.locator("td")
+            if idx > 0:
+                self._add_product_row(page)
 
             store_name = self._extract_store_name(order_info.purchase_url)
-            self._fill_td_input(tds.nth(self.TD_INDEX_STORE_NAME), store_name)
-            self._fill_td_input(tds.nth(self.TD_INDEX_PRODUCT_NAME), order_info.product_name)
-            if order_info.color_size_spec:
-                self._fill_td_input(tds.nth(self.TD_INDEX_SPEC), order_info.color_size_spec)
-            self._fill_td_input(tds.nth(self.TD_INDEX_URL), order_info.purchase_url)
-            self._fill_td_input(tds.nth(self.TD_INDEX_QUANTITY), str(order_info.order_quantity))
+            self._fill_placeholder_nth(page, self.PLACEHOLDER_STORE_NAME, idx, store_name)
+            self._fill_placeholder_nth(page, self.PLACEHOLDER_URL, idx, order_info.purchase_url)
+            self._fill_placeholder_nth(page, self.PLACEHOLDER_PRODUCT_NAME, idx, order_info.product_name)
+            self._fill_placeholder_nth(page, self.PLACEHOLDER_QUANTITY, idx, str(order_info.order_quantity))
             if order_info.unit_price_for_form:
-                self._fill_td_input(tds.nth(self.TD_INDEX_UNIT_PRICE), order_info.unit_price_for_form)
+                self._fill_placeholder_nth(
+                    page, self.PLACEHOLDER_UNIT_PRICE, idx, str(order_info.unit_price_for_form)
+                )
+            if order_info.color_size_spec:
+                self._fill_placeholder_nth(
+                    page, self.PLACEHOLDER_SPEC_NOTE, idx, order_info.color_size_spec, required=False
+                )
 
         self.logger.info(f"✓ {len(order_group)}商品の入力が完了しました")
 
-    def _fill_td_input(self, td: Locator, value: str) -> bool:
+    def _fill_placeholder_nth(
+        self, page: Page, placeholder: str, idx: int, value: str, *, required: bool = True
+    ) -> bool:
+        loc = page.locator(f'input[placeholder="{placeholder}"]').nth(idx)
         try:
-            input_elem = td.locator("input, textarea").first
-            if input_elem.count() > 0:
-                input_elem.fill(value)
-                return True
+            loc.wait_for(state="visible", timeout=10000)
+            loc.fill(value)
+            time.sleep(0.3)
+            return True
         except Exception as e:
-            self.logger.warning(f"  警告: フィールドへの入力に失敗しました（値: {value}, エラー: {e}）")
-        return False
+            if required:
+                raise Exception(
+                    f"フィールド[{placeholder}] (nth={idx}) への入力失敗: {e}"
+                ) from e
+            self.logger.debug(
+                "  optional フィールド[%s] (nth=%d) は visible でないためスキップ", placeholder, idx
+            )
+            return False
 
-    def _click_dialog_submit(self, page: Page) -> None:
+    def _add_product_row(self, page: Page) -> None:
+        """同一店舗グループに「+商品」ボタンで行を追加する。"""
+        plus_btn = page.locator(
+            'xpath=(//span[contains(@class, "bg-warning") and normalize-space(text())="商品"]'
+            "/following-sibling::img[contains(@class, 'cursor-pointer')])[1]"
+        ).last
+        plus_btn.wait_for(state="visible", timeout=10000)
+        plus_btn.click()
+        time.sleep(1)
+
+    def _click_dialog_confirm(self, page: Page) -> None:
+        """Quasar 確認ダイアログの確定ボタンを押す。複数候補テキストを試す。"""
         dialog = page.locator(".q-dialog")
         dialog.wait_for(state="visible", timeout=10000)
-        dialog_submit_btn = dialog.locator('button:has-text("注文提出")')
-        dialog_submit_btn.wait_for(state="visible", timeout=10000)
-        dialog_submit_btn.click()
-        page.wait_for_load_state("networkidle", timeout=30000)
-        time.sleep(3)
-        self.logger.info("    ✓ 注文が送信されました")
+        for txt in ("確定", "OK", "確認", "決済", "提出", "送信", "はい"):
+            btn = dialog.locator(f'button:has-text("{txt}")')
+            if btn.count() > 0:
+                btn.first.click()
+                page.wait_for_load_state("networkidle", timeout=30000)
+                time.sleep(3)
+                self.logger.info("    ✓ 注文が送信されました（dialog button: %s）", txt)
+                return
+        raise Exception("確認ダイアログ内に確定ボタンが見つかりませんでした")
 
     def _confirm_and_submit_order(self, page: Page) -> Optional[str]:
+        """新UIフロー（2026-05〜）:
+        /manual → カートに追加 → /goods/cart → 決済 → /goods/order-confirm → 注文提出 → 注文番号取得。
+        """
         try:
-            # ステップ1: フォームページの「注文提出」→ 確認ページまたはダイアログへ遷移
-            submit_btn = page.locator('button:has-text("注文提出")')
+            cart_add_btn = page.locator('button:has-text("カートに追加")').first
+            cart_add_btn.wait_for(state="visible", timeout=10000)
+            cart_add_btn.click()
+            try:
+                page.wait_for_url(f"{BASE_URL}/goods/cart", timeout=15000)
+            except Exception:
+                page.goto(f"{BASE_URL}/goods/cart", wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_load_state("networkidle", timeout=30000)
+            time.sleep(2)
+            self.logger.info("    ✓ カートに追加しました（→ /goods/cart）")
+
+            checkout_btn = page.locator('button:has-text("決済")').last
+            checkout_btn.wait_for(state="visible", timeout=10000)
+            checkout_btn.click()
+            try:
+                page.wait_for_url("**/goods/order-confirm**", timeout=15000)
+            except Exception:
+                pass
+            page.wait_for_load_state("networkidle", timeout=30000)
+            time.sleep(2)
+            self.logger.info("    ✓ 決済 → 注文確認画面へ遷移（%s）", page.url)
+
+            submit_btn = page.locator('button:has-text("注文提出")').last
             submit_btn.wait_for(state="visible", timeout=10000)
             submit_btn.click()
-            page.wait_for_load_state("networkidle", timeout=30000)
-            time.sleep(3)
+            time.sleep(2)
             self.logger.info("    ✓ 注文提出ボタンをクリックしました")
 
-            # ダイアログが既に表示されているか確認
-            dialog = page.locator(".q-dialog")
-            if dialog.count() > 0 and dialog.is_visible():
-                self.logger.info("    ✓ 確認ダイアログが表示されました（直接）")
-                self._click_dialog_submit(page)
-            else:
-                # ステップ2: 確認ページの「注文提出」→ 確認ダイアログ表示
-                self.logger.info("    ✓ 注文確認ページに遷移しました")
-                submit_btn_confirm = page.locator('button:has-text("注文提出")')
-                submit_btn_confirm.wait_for(state="visible", timeout=10000)
-                submit_btn_confirm.click()
+            # 確認ダイアログが出る場合のみ確定。出なければ既に注文成立 (success page or list)。
+            try:
+                self._click_dialog_confirm(page)
+            except Exception:
+                page.wait_for_load_state("networkidle", timeout=15000)
                 time.sleep(2)
-                self.logger.info("    ✓ 確認ダイアログが表示されました")
-
-                # ステップ3: ダイアログ内の「注文提出」→ 注文確定
-                self._click_dialog_submit(page)
+                self.logger.info("    ✓ 注文が送信されました（dialog なし、直接成立）")
 
             order_number = self._extract_order_number(page)
             if order_number:
                 self.logger.info("    ✓ ご注文番号: %s", order_number)
             else:
                 self.logger.warning("    ご注文番号を取得できませんでした（URL: %s）", page.url)
-
             return order_number
 
         except Exception as e:
             self.logger.error(f"    ✗ 注文確認処理中にエラーが発生しました: {e}")
+            self._dump_page_for_debug(page, reason="submit_failure")
             raise
 
     # YP の注文番号フォーマット:

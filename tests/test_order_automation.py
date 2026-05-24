@@ -128,27 +128,6 @@ class TestOrderAutomation:
             OrderAutomation(headless=True)
         assert "ログイン情報が設定されていません" in str(exc_info.value)
 
-    def test_fill_td_input_success(self, automation):
-        mock_td = MagicMock()
-        mock_input = MagicMock()
-        mock_td.locator.return_value.first = mock_input
-        mock_input.count.return_value = 1
-
-        result = automation._fill_td_input(mock_td, "test value")
-
-        assert result is True
-        mock_input.fill.assert_called_once_with("test value")
-
-    def test_fill_td_input_no_element(self, automation):
-        mock_td = MagicMock()
-        mock_input = MagicMock()
-        mock_td.locator.return_value.first = mock_input
-        mock_input.count.return_value = 0
-
-        result = automation._fill_td_input(mock_td, "test value")
-
-        assert result is False
-
     def test_extract_store_name(self):
         assert OrderAutomation._extract_store_name("https://detail.1688.com/offer/123") == "detail.1688.com"
         assert OrderAutomation._extract_store_name("https://www.example.com/product") == "example.com"
@@ -159,45 +138,6 @@ class TestOrderAutomation:
     def test_process_orders_empty_list(self, mock_playwright, automation):
         automation.process_orders([])
         assert automation.playwright is None
-
-    def test_fill_order_form_with_page(self, automation):
-        mock_page = MagicMock()
-        automation.page = mock_page
-
-        mock_rows = MagicMock()
-        mock_last_row = MagicMock()
-        mock_tds = MagicMock()
-
-        mock_page.locator.return_value = mock_rows
-        mock_rows.last = mock_last_row
-        mock_last_row.locator.return_value = mock_tds
-
-        mock_td = MagicMock()
-        mock_input = MagicMock()
-        mock_td.locator.return_value.first = mock_input
-        mock_input.count.return_value = 1
-        mock_tds.nth.return_value = mock_td
-
-        mock_submit_btn = MagicMock()
-        mock_page.locator.return_value = mock_submit_btn
-        mock_submit_btn.wait_for = MagicMock()
-        mock_page.content.return_value = "注文番号：P260226001YP806"
-
-        order_group = [
-            Order(
-                asin="B001",
-                product_name="商品1",
-                purchase_url="http://test.com/product1",
-                color_size_spec="Red",
-                order_quantity=10,
-                unit_price=100,
-            ),
-        ]
-
-        automation.fill_order_form(order_group)
-
-        mock_page.goto.assert_called_with(f"{BASE_URL}/manual", timeout=30000)
-        mock_page.click.assert_any_call('button:has-text("商品を追加")')
 
     @patch("infrastructure.order_automation.sync_playwright")
     def test_process_orders_without_login(self, mock_playwright):
