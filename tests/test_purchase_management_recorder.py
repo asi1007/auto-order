@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from domain.entities.order import Order
 from domain.entities.order_group import OrderGroup
 from infrastructure.purchase_management_recorder import record_purchase_management
@@ -247,13 +249,80 @@ class TestRecordPurchaseManagement:
         # 注文番号が改行区切りで併記される
         assert item.order_number == "Y0806-260524011\nY0806-260524012"
 
-        # 値は主部材（最大総額）から
+        # 数量は主部材（最大総額）から
         assert item.quantity == 600
-        assert item.unit_price == 10.6 * 1  # quantity_per_item=1
+
+        # 原価は主部材+補助部材を合算した「1個あたり実原価」
+        assert item.unit_price == pytest.approx(11.58)
 
         # URL は両方が改行で併記される
         assert "802957666380" in item.url
         assert "570972837245" in item.url
         assert "\n" in item.url
+
+    def test_merged_unit_price_is_scaled_when_sub_part_quantity_differs(self):
+        """補助部材の発注数が主部材と異なる場合、単純な単価の足し算ではなく
+        総額を主部材の数量で割った「1個あたり実原価」になる。"""
+        main_orders = [
+            Order(
+                asin="B0FCHM6QQR",
+                product_name="主部材",
+                sales_product_name="A4 アクリルフォトフレーム",
+                purchase_url="https://detail.1688.com/offer/802957666380.html",
+                order_quantity=600,
+                sales_order_quantity=600,
+                unit_price=10.6,
+                image_text="",
+                remark_text="",
+                delivery_category="特別",
+                lot_size=1,
+                quantity_per_item=1,
+            ),
+        ]
+        # 補助部材は主部材の 2 倍の本数（1商品あたり2本使う）
+        sub_orders = [
+            Order(
+                asin="B0FCHM6QQR",
+                product_name="補助部材",
+                sales_product_name="A4 アクリルフォトフレーム",
+                purchase_url="https://detail.1688.com/offer/570972837245.html",
+                order_quantity=1200,
+                sales_order_quantity=1200,
+                unit_price=0.98,
+                image_text="",
+                remark_text="",
+                delivery_category="",
+                lot_size=1,
+                quantity_per_item=1,
+            ),
+        ]
+        results = [
+            OrderGroup(order_group=main_orders, order_number="Y0806-260524011"),
+            OrderGroup(order_group=sub_orders, order_number="Y0806-260524012"),
+        ]
+
+        base_mock = MagicMock()
+        base_mock.client = MagicMock()
+        repository_instance = MagicMock()
+
+        with patch(
+            "infrastructure.purchase_management_recorder.BaseSheetsRepository",
+            return_value=base_mock,
+        ), patch(
+            "infrastructure.purchase_management_recorder.SheetsPurchaseManagementRepository",
+            return_value=repository_instance,
+        ):
+            record_purchase_management(
+                credentials_file="creds.json",
+                management_sheet_url="https://example.com/sheet?gid=1#gid=1",
+                order_groups=results,
+                management_sheet_name="仕入管理",
+            )
+
+        item = repository_instance.append.call_args_list[0][0][0]
+
+        assert item.quantity == 600
+        # (600*10.6 + 1200*0.98) / 600 = 12.56
+        assert item.unit_price == pytest.approx(12.56)
 
 

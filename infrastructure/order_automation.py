@@ -130,7 +130,7 @@ class OrderAutomation:
         cleaned = re.sub(r"[^\d]", "", text)
         return int(cleaned) if cleaned else 0
 
-    def _log_balance(self) -> None:
+    def _log_balance(self, label: str = "発注後") -> None:
         try:
             self._goto_with_retry(f"{BASE_URL}/home")
             time.sleep(2)
@@ -146,7 +146,7 @@ class OrderAutomation:
             cny_balance = cny_match.group(1) if cny_match else cny_text
             jpy_balance = jpy_match.group(1) if jpy_match else jpy_text
 
-            self.logger.info("💰 発注後残高: CNY %s 元 / JPY %s 円", cny_balance, jpy_balance)
+            self.logger.info("💰 %s残高: CNY %s 元 / JPY %s 円", label, cny_balance, jpy_balance)
         except Exception as e:
             self.logger.warning("残高取得に失敗しました: %s", e)
 
@@ -194,6 +194,58 @@ class OrderAutomation:
         except Exception as e:
             self.logger.warning("両替処理中にエラーが発生しました（発注処理は継続します）: %s", e)
 
+    def clear_cart(self) -> None:
+        # 過去の発注失敗で残ったゾンビ商品がカートにあると、次回発注時に巻き込まれて
+        # 全体が失敗するため、発注フロー開始前にカートを空にする。
+        try:
+            self.logger.info("発注前にカートをクリアしています...")
+            self._goto_with_retry(f"{BASE_URL}/goods/cart")
+            time.sleep(2)
+
+            # 全選択チェックボックス（ページ上の最初のチェックボックスを採用）
+            all_checkbox = self.page.locator('input[type="checkbox"]').first
+            if all_checkbox.count() == 0:
+                self.logger.info("✓ カートは空です（チェックボックスなし）")
+                return
+
+            try:
+                all_checkbox.check(force=True, timeout=5000)
+            except Exception:
+                # チェックボックスが既に選択済みの場合などはスルー
+                pass
+            time.sleep(0.5)
+
+            # 削除ボタン候補（テキスト揺れに備えて複数）
+            for label in ("削除", "全削除", "一括削除", "选中删除", "删除"):
+                btn = self.page.locator(f'button:has-text("{label}")')
+                if btn.count() == 0:
+                    continue
+                try:
+                    btn.last.click(timeout=3000)
+                except Exception:
+                    continue
+
+                # 確認ダイアログが出る場合は確定
+                try:
+                    dialog = self.page.locator(".q-dialog")
+                    dialog.wait_for(state="visible", timeout=5000)
+                    for dlg_label in ("確定", "OK", "確認", "はい", "确定"):
+                        dlg_btn = dialog.locator(f'button:has-text("{dlg_label}")')
+                        if dlg_btn.count() > 0:
+                            dlg_btn.first.click()
+                            break
+                except Exception:
+                    pass
+
+                self.page.wait_for_load_state("networkidle", timeout=15000)
+                time.sleep(2)
+                self.logger.info("✓ カートをクリアしました（削除ボタン: %s）", label)
+                return
+
+            self.logger.warning("カート削除ボタンが見つかりませんでした（カートに残留商品がある場合は手動で削除してください）")
+        except Exception as e:
+            self.logger.warning("カートクリア処理中にエラー（発注処理は継続します）: %s", e)
+
     def _reset_order_form(self, page: Page) -> None:
         reset_btn = page.locator('button:has-text("リセット")')
         if reset_btn.count() > 0 and reset_btn.is_visible():
@@ -204,26 +256,33 @@ class OrderAutomation:
 
     def fill_order_form(self, order_group: List[Order]) -> Optional[str]:
         try:
+            # 提出前に /order/list の最新注文番号をスナップショット。
+            # 提出後に取得した番号がこれと同じなら「成立していない」と判定するために使う。
+            pre_submit_latest = self._snapshot_latest_order_number(self.page)
+            if pre_submit_latest:
+                self.logger.debug("  提出前 最新注文番号: %s", pre_submit_latest)
+
             self._goto_with_retry(f"{BASE_URL}/manual")
             time.sleep(1)
             self._reset_order_form(self.page)
             self.logger.info("✓ 手動注文ページを開きました")
 
             self._fill_order_items(self.page, order_group)
-            return self._confirm_and_submit_order(self.page)
+            return self._confirm_and_submit_order(self.page, pre_submit_latest)
 
         except Exception as e:
             self.logger.error(f"✗ 注文グループの入力中にエラーが発生しました: {e}")
             self._dump_page_for_debug(self.page, reason="fill_failure")
             raise
 
-    # YP の新UI (2026-05 以降) フィールド placeholder
+    # YP の新UI (2026-06-28 以降) フィールド placeholder
     PLACEHOLDER_STORE_NAME = "店舗名を入力してください"
-    PLACEHOLDER_URL = "製品のURLを入力してください。"
-    PLACEHOLDER_PRODUCT_NAME = "商品名を入力してください"
+    PLACEHOLDER_URL = "商品URL入力"
+    PLACEHOLDER_PRODUCT_NAME = "商品名入力"
     PLACEHOLDER_QUANTITY = "数量"
     PLACEHOLDER_UNIT_PRICE = "単価"
-    PLACEHOLDER_SPEC_NOTE = "仕様備考"
+    PLACEHOLDER_SPEC_NAME = "商品仕様入力"
+    PLACEHOLDER_SPEC_NOTE = "仕様備考の入力"
 
     def _fill_order_items(self, page: Page, order_group: List[Order]):
         # 新UI構造: 1店舗 × N商品（同一URLグループでも各ASINを別 商品 ブロックとして扱う）。
@@ -246,6 +305,10 @@ class OrderAutomation:
 
             self._fill_placeholder_nth(page, self.PLACEHOLDER_URL, idx, order_info.purchase_url)
             self._fill_placeholder_nth(page, self.PLACEHOLDER_PRODUCT_NAME, idx, order_info.product_name)
+            # 新UI（2026-06〜）では「商品仕様」が必須項目になった。
+            # color_size_spec があればそれを入れ、空なら product_name を流用してフォーム送信を通す。
+            spec_value = order_info.color_size_spec or order_info.product_name
+            self._fill_placeholder_nth(page, self.PLACEHOLDER_SPEC_NAME, idx, spec_value)
             self._fill_placeholder_nth(page, self.PLACEHOLDER_QUANTITY, idx, str(order_info.order_quantity))
             if order_info.unit_price_for_form:
                 self._fill_placeholder_nth(
@@ -261,10 +324,17 @@ class OrderAutomation:
     def _fill_placeholder_nth(
         self, page: Page, placeholder: str, idx: int, value: str, *, required: bool = True
     ) -> bool:
+        # YP 新UI (2026-06〜) では Quasar の q-field 内部 input が hidden 状態のまま
+        # 表示されることがある。visible 待ちでは取れないので attached を待ってから
+        # スクロールして force=True で fill する。
         loc = page.locator(f'input[placeholder="{placeholder}"]').nth(idx)
         try:
-            loc.wait_for(state="visible", timeout=10000)
-            loc.fill(value)
+            loc.wait_for(state="attached", timeout=10000)
+            try:
+                loc.scroll_into_view_if_needed(timeout=3000)
+            except Exception:
+                pass
+            loc.fill(value, force=True, timeout=5000)
             time.sleep(0.3)
             return True
         except Exception as e:
@@ -273,19 +343,31 @@ class OrderAutomation:
                     f"フィールド[{placeholder}] (nth={idx}) への入力失敗: {e}"
                 ) from e
             self.logger.debug(
-                "  optional フィールド[%s] (nth=%d) は visible でないためスキップ", placeholder, idx
+                "  optional フィールド[%s] (nth=%d) は attached でないためスキップ", placeholder, idx
             )
             return False
 
     def _add_product_row(self, page: Page) -> None:
-        """同一店舗グループに「+商品」ボタンで行を追加する。"""
+        """同一店舗グループに「+商品」ボタンで行を追加する。
+
+        新UI (2026-06 以降) の DOM 構造:
+          <img class="w-5 cursor-pointer" ...>   # 削除ボタン
+          <span class="bg-warning ...">商品1</span>  # ラベル（"商品" + 番号）
+          <img class="w-6 h-6 cursor-pointer" ...>   # ← ここが「+商品」ボタン
+        旧UIは text()="商品" だったが、新UIは "商品1" "商品2" のように番号付きになったため
+        starts-with で前方一致にする。last() で最新の商品ブロックの「+」を選ぶ。
+        """
         plus_btn = page.locator(
-            'xpath=(//span[contains(@class, "bg-warning") and normalize-space(text())="商品"]'
-            "/following-sibling::img[contains(@class, 'cursor-pointer')])[1]"
-        ).last
-        plus_btn.wait_for(state="visible", timeout=10000)
-        plus_btn.click()
-        time.sleep(1)
+            'xpath=(//span[contains(@class, "bg-warning") and starts-with(normalize-space(.), "商品")]'
+            "/following-sibling::img[contains(@class, 'cursor-pointer')])[last()]"
+        )
+        plus_btn.wait_for(state="attached", timeout=10000)
+        try:
+            plus_btn.scroll_into_view_if_needed(timeout=3000)
+        except Exception:
+            pass
+        plus_btn.click(force=True, timeout=5000)
+        time.sleep(1.5)  # 新商品ブロックが DOM に追加されるのを待つ
 
     def _click_dialog_confirm(self, page: Page) -> None:
         """Quasar 確認ダイアログの確定ボタンを押す。複数候補テキストを試す。"""
@@ -301,7 +383,7 @@ class OrderAutomation:
                 return
         raise Exception("確認ダイアログ内に確定ボタンが見つかりませんでした")
 
-    def _confirm_and_submit_order(self, page: Page) -> Optional[str]:
+    def _confirm_and_submit_order(self, page: Page, pre_submit_latest: Optional[str] = None) -> Optional[str]:
         """新UIフロー（2026-05〜）:
         /manual → カートに追加 → /goods/cart → 決済 → /goods/order-confirm → 注文提出 → 注文番号取得。
         """
@@ -342,17 +424,65 @@ class OrderAutomation:
                 time.sleep(2)
                 self.logger.info("    ✓ 注文が送信されました（dialog なし、直接成立）")
 
-            order_number = self._extract_order_number(page)
-            if order_number:
-                self.logger.info("    ✓ ご注文番号: %s", order_number)
-            else:
+            # 提出後の注文番号取得は YP 注文一覧への反映遅延に耐えるためリトライする。
+            # 「取れた番号が提出前と同じ」= まだ新規注文が反映されていない可能性があるので、
+            # 最大 max_retry_seconds まで interval_seconds ごとに再取得を試みる。
+            max_retry_seconds = 60
+            interval_seconds = 5
+            elapsed = 0
+            order_number: Optional[str] = None
+            while True:
+                order_number = self._extract_order_number(page)
+                if order_number and (not pre_submit_latest or order_number != pre_submit_latest):
+                    break
+                if elapsed >= max_retry_seconds:
+                    break
+                self.logger.debug(
+                    "注文番号リスト反映待ち → %s秒後にリトライ（現在=%s / 提出前=%s / elapsed=%ds）",
+                    interval_seconds, order_number, pre_submit_latest, elapsed,
+                )
+                time.sleep(interval_seconds)
+                elapsed += interval_seconds
+
+            if not order_number:
                 self.logger.warning("    ご注文番号を取得できませんでした（URL: %s）", page.url)
+                return None
+            if pre_submit_latest and order_number == pre_submit_latest:
+                # 上限まで待っても新規番号がリスト反映されなかった → 実際に成立していない可能性が高い
+                self.logger.error(
+                    "    ✗ 注文番号 %s が提出前の最新番号と同一です（%ds待機後も更新なし）。注文は成立していない可能性が高いです。",
+                    order_number, max_retry_seconds,
+                )
+                self._dump_page_for_debug(page, reason="order_not_created")
+                return None
+            self.logger.info("    ✓ ご注文番号: %s（取得までelapsed=%ds）", order_number, elapsed)
             return order_number
 
         except Exception as e:
             self.logger.error(f"    ✗ 注文確認処理中にエラーが発生しました: {e}")
             self._dump_page_for_debug(page, reason="submit_failure")
             raise
+
+    def _snapshot_latest_order_number(self, page: Page) -> Optional[str]:
+        # 提出前に /order/list の最新注文番号を取得しておく。失敗しても発注フローには影響させない。
+        # この後 fill_order_form 内で /manual に goto し直すので、元URLへ戻す処理は不要。
+        try:
+            page.goto(f"{BASE_URL}/order/list", timeout=30000, wait_until="domcontentloaded")
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+            try:
+                page.wait_for_function(
+                    f"() => /{self.ORDER_NUMBER_PATTERN}/.test(document.body.innerText)",
+                    timeout=10000,
+                )
+            except Exception:
+                return None
+            matches = re.findall(self.ORDER_NUMBER_PATTERN, page.content())
+            return matches[0] if matches else None
+        except Exception:
+            return None
 
     # YP の注文番号フォーマット:
     #   - 旧: P260226013YP806（P + 9桁 + YP + 数字）
@@ -422,6 +552,12 @@ class OrderAutomation:
 
     @staticmethod
     def _extract_store_name(purchase_url: str) -> str:
+        # purchase_url が http(s):// で始まらない場合（例:「星球彩印」のような店舗名直書き）は
+        # そのまま店舗名として扱う。
+        if not purchase_url:
+            return "不明"
+        if not purchase_url.lower().startswith(("http://", "https://")):
+            return purchase_url.strip()
         try:
             parsed = urlparse(purchase_url)
             hostname = parsed.hostname or ""
@@ -429,6 +565,61 @@ class OrderAutomation:
             return hostname if hostname else "不明"
         except Exception:
             return "不明"
+
+    # YP 側で 1セッション（≒1ブラウザセッション or 短時間内）あたり 2件程度しか成立しない
+    # レート制限がある挙動を 2026-07-21, 2026-07-26 の実行で 2回連続確認済み。
+    # 対策: この件数ごとにブラウザを閉じて再ログインし、セッションをリフレッシュする。
+    GROUPS_PER_SESSION = 2
+
+    def _refresh_session(self) -> bool:
+        self.logger.info("🔄 セッションリフレッシュ: ログアウト → クッキークリア → 再ログイン")
+        # 1. YP に対して明示的なログアウト（画面上のログアウトボタン、または /logout URL）
+        try:
+            if self.page:
+                try:
+                    logout_btn = self.page.locator('button:has-text("ログアウト")').first
+                    if logout_btn.count() > 0:
+                        logout_btn.click(force=True, timeout=3000)
+                        time.sleep(2)
+                        self.logger.info("  ✓ ログアウトボタンをクリック")
+                except Exception:
+                    pass
+                try:
+                    self.page.goto(f"{BASE_URL}/logout", timeout=10000, wait_until="domcontentloaded")
+                    time.sleep(2)
+                    self.logger.info("  ✓ /logout URL に遷移")
+                except Exception:
+                    pass
+        except Exception as e:
+            self.logger.debug(f"ログアウト試行時のエラー（継続）: {e}")
+
+        # 2. context の cookies を明示的にクリア（次の new context でも念のため）
+        try:
+            if self.context:
+                self.context.clear_cookies()
+                self.logger.info("  ✓ Cookies をクリア")
+        except Exception:
+            pass
+
+        # 3. ブラウザ完全終了
+        try:
+            self.close_browser()
+        except Exception as e:
+            self.logger.warning("close_browser でエラー（継続します）: %s", e)
+
+        # インスタンス状態を初期化
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.page = None
+        self.is_logged_in = False
+
+        self.start_browser()
+        if not self.login():
+            self.logger.error("再ログインに失敗しました")
+            return False
+        self.clear_cart()
+        return True
 
     def process_orders(self, order_groups: List[List[Order]]) -> List[OrderGroup]:
         if not order_groups:
@@ -445,22 +636,52 @@ class OrderAutomation:
                 self.close_browser()
                 return []
 
+        self.clear_cart()
         self.convert_jpy_to_cny()
+        # 発注前残高をログに残す。発注後残高との差分計算の起点として使う。
+        # ※ 実消費 = 記録合計 + YP側手数料/送料 で差が出るのは仕様。
+        self._log_balance("発注前")
 
         total_items = sum(len(group) for group in order_groups)
         self.logger.info(f"{len(order_groups)}グループ（合計{total_items}商品）の注文を処理します...")
 
         results: List[OrderGroup] = []
+        groups_since_refresh = 0
 
         for i, order_group in enumerate(order_groups, 1):
+            # レート制限回避: GROUPS_PER_SESSION 件ごとにセッションを再構築
+            if groups_since_refresh >= self.GROUPS_PER_SESSION:
+                if not self._refresh_session():
+                    self.logger.error("セッションリフレッシュに失敗したため、以降の処理を中止します")
+                    for remaining in order_groups[i-1:]:
+                        results.append(OrderGroup(order_group=remaining, order_number=None, error="session refresh failed"))
+                    break
+                groups_since_refresh = 0
+
             self.logger.info(f"[{i}/{len(order_groups)}] グループ処理中...")
             try:
                 order_number = self.fill_order_form(order_group)
-                results.append(OrderGroup(order_group=order_group, order_number=order_number))
             except Exception as e:
                 self.logger.warning(f"注文グループの処理をスキップします: {e}")
                 results.append(OrderGroup(order_group=order_group, order_number=None, error=str(e)))
+                groups_since_refresh += 1
                 continue
+
+            # 【重要】未成立検知時の自動リトライは無効化した（2026-07-31）。
+            # 理由: `_confirm_and_submit_order` が None を返すのは以下2ケース：
+            #   (a) 提出後の注文番号が提出前と同じ (リスト反映遅延の疑い、内部で60秒リトライ済み)
+            #   (b) そもそも注文番号が取れなかった（実は成立している可能性あり、None として区別できない）
+            # (b) のケースで自動リトライすると二重発注リスクがあるため、
+            # 未成立と判定されたグループは YP で人が確認する運用に統一する。
+            # ※ GROUPS_PER_SESSION ごとの定期リフレッシュは残す（安全側）。
+            if order_number is None:
+                self.logger.warning(
+                    "    ⚠ 未成立と判定されました。YP注文一覧で実際に成立していないか手動確認を推奨。"
+                    "自動リトライはしません（二重発注リスク回避）"
+                )
+            groups_since_refresh += 1
+
+            results.append(OrderGroup(order_group=order_group, order_number=order_number))
             time.sleep(2)
 
         self.logger.info("すべての注文フォームへの入力が完了しました")

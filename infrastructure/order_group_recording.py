@@ -23,7 +23,11 @@ def append_items_from_order_groups(
 
     total_recorded = 0
     for result in order_groups:
-        order_number = result.order_number or ""
+        # 注文成立していない（order_numberが取れていない）グループは記録対象から除外する。
+        # ※ YP側にゴーストレコードが残らないようにするための防衛措置。
+        if not result.order_number:
+            continue
+        order_number = result.order_number
         for order in result.order_group:
             try:
                 item = to_item(order, order_number)

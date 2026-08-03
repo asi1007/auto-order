@@ -13,11 +13,19 @@ GoogleシートからASINベースで発注数を集計し、Playwrightでイー
 - Python: `/Users/wadaatsushi/Documents/automation/procurements/auto-order/.venv/bin/python`
 - 設定ファイル: `.env`
 
+## ⚠️ 多重起動事故防止（絶対厳守）
+
+- `.venv/bin/python order_items.py` は**フォアグラウンドで1本だけ**実行する。`run_in_background: true` は使わない
+- 出力を絞る用途で `| tail -N` `| head -N` を使わない → 出力ファイルが空に見えて再起動を誘発する。代わりに `> /tmp/order_items_$(date +%Y%m%d_%H%M%S).log 2>&1` でリダイレクトし、完了後に `grep` で抽出
+- 「動いてないように見える」ときは、まず `ps aux | grep order_items` で存在確認する。**動いている限り再起動禁止**
+
 ## 実行
 
 ```bash
-cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/python order_items.py
+cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/python order_items.py > /tmp/order_items_$(date +%Y%m%d_%H%M%S).log 2>&1
 ```
+
+必要なログは完了後に `grep -E "ご注文番号|残高|✗|エラー|グループ処理中" /tmp/order_items_*.log` などで抽出する。
 
 ## 処理概要
 
@@ -25,6 +33,25 @@ cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/
 2. ASINごとに発注数を集計
 3. 購入URLごとにグループ化（最大5商品/フォーム）
 4. Playwrightでイーウーパスポートに自動入力
+5. 仕入管理シートにASINごと1行で記録（同一ASINが複数注文に分かれた場合は1行に統合）
+
+## 同一ASINの原価は必ず足し算する【自動化済】
+
+仕入情報シートには、**1つのASINに対して複数行（主部材＋補助部材）**が登録されていることがある。
+
+例: `B0FCHM6QQR` A4アクリルフォトフレーム（摆挂两用款）
+| 仕入情報 | 商品 | 単価 |
+|---|---|---|
+| 主部材 | 摆挂两用款 A4アクリルフレーム | 10.60 元 |
+| 補助部材 | 钢丝绳（壁掛け用ワイヤー） | 0.98 元 |
+
+これらは購入先URLが違うため**別々の注文番号**になるが、仕入管理シートには**1行**で記録する。
+このとき **AS列(現地価格CNY)・AQ列(購入価格JPY)は主部材の単価ではなく、全部材を合算した「1個あたり実原価」**（上例なら **11.58 元**）を入れる。主部材の単価だけを載せると原価が過少になり、利益計算が狂う。
+
+- 実装: `_merge_same_asin_across_groups` / `_sum_unit_price_per_main_quantity`（[infrastructure/purchase_management_recorder.py](infrastructure/purchase_management_recorder.py)）
+- 計算式: `全部材の総額（数量×単価）の合計 ÷ 主部材の数量`。補助部材が主部材と同数なら単純な足し算と一致し、1商品に2本使う等で数量が違っても正しくスケールする
+- 数量・納品分類・売値は「総額が最大の item」＝主部材から採用。注文番号とURLは改行区切りで併記
+- **手作業で仕入管理シートに追記するときも同じルールを適用する**（下の単発追記セクション参照）
 
 ## DDD構成
 

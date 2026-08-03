@@ -13,11 +13,19 @@ alwaysApply: false
 - Python: `/Users/wadaatsushi/Documents/automation/procurements/auto-order/.venv/bin/python`
 - 設定ファイル: `.env`
 
+## ⚠️ 多重起動事故防止（絶対厳守）
+
+- `.venv/bin/python order_packing_materials.py` は**フォアグラウンドで1本だけ**実行する。`run_in_background: true` は使わない
+- 出力を絞る用途で `| tail -N` `| head -N` を使わない → 出力が空に見えて再起動を誘発する
+- 「動いてないように見える」ときは、まず `ps aux | grep order_packing` で存在確認する。**動いている限り再起動禁止**
+
 ## 実行
 
 ```bash
-cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/python order_packing_materials.py
+cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/python order_packing_materials.py > /tmp/order_packing_$(date +%Y%m%d_%H%M%S).log 2>&1
 ```
+
+必要なログは完了後に `grep -E "ご注文番号|残高|✗|エラー|グループ処理中" /tmp/order_packing_*.log` などで抽出する。
 
 ## 注意事項
 

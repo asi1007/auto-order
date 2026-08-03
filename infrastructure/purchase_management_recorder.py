@@ -116,13 +116,32 @@ def _to_purchase_management_items_by_asin(orders: list[Order], *, order_number: 
     return items
 
 
+def _sum_unit_price_per_main_quantity(
+    items: list[PurchaseManagementItem], main: PurchaseManagementItem
+) -> float | None:
+    """主部材1個を作るのに掛かる原価（= 全部材の総額 ÷ 主部材の数量）を返す。
+    補助部材が主部材と同数なら単純な単価の足し算と一致する。
+    """
+    if any(i.unit_price is None for i in items):
+        return None
+
+    main_quantity = float(main.quantity or 0)
+    if main_quantity <= 0:
+        return None
+
+    total_cost = sum(float(i.quantity or 0) * float(i.unit_price or 0) for i in items)
+    return round(total_cost / main_quantity, 2)
+
+
 def _merge_same_asin_across_groups(items: list[PurchaseManagementItem]) -> PurchaseManagementItem:
     """同一ASINで複数注文番号にまたがる items を1行に統合する。
     Why: Amazon の1製品（同一ASIN）が複数のサプライヤー注文に分かれた場合、
-         仕入管理シートは1行で表現するのが正しい運用（主部材+補助部材を合算しない）。
+         仕入管理シートは1行で表現するのが正しい運用。原価は主部材+補助部材を
+         合算しないと1個あたりの実原価が過少になる。
     Strategy:
       - 注文番号: 改行(\n)区切りで併記
-      - 数量/単価/売値/分類等: 「総額（数量×単価）が最大の item」= 主部材 から採用
+      - 単価: 全部材の総額を主部材の数量で割った「1個あたり実原価」
+      - 数量/売値/分類等: 「総額（数量×単価）が最大の item」= 主部材 から採用
       - URL/画像/備考: 全itemから unique 結合
     """
     if len(items) == 1:
@@ -133,6 +152,10 @@ def _merge_same_asin_across_groups(items: list[PurchaseManagementItem]) -> Purch
 
     main = max(items, key=_total_cost)
     order_numbers_joined = _join_unique_text([i.order_number for i in items], sep="\n")
+    merged_unit_price = _sum_unit_price_per_main_quantity(items, main)
+    merged_unit_price_jpy = (
+        convert_cny_to_jpy(merged_unit_price) if merged_unit_price is not None else None
+    )
 
     return PurchaseManagementItem(
         purchase_date=main.purchase_date,
@@ -145,8 +168,8 @@ def _merge_same_asin_across_groups(items: list[PurchaseManagementItem]) -> Purch
         remark_text=_join_unique_text([i.remark_text for i in items], sep="\n"),
         delivery_category=main.delivery_category,
         quantity=main.quantity,
-        unit_price=main.unit_price,
-        unit_price_jpy=main.unit_price_jpy,
+        unit_price=merged_unit_price,
+        unit_price_jpy=merged_unit_price_jpy,
         selling_price=main.selling_price,
         total_price=main.total_price,
         material_name=main.material_name,
@@ -183,7 +206,10 @@ def record_purchase_management(
         # 同一ASINが複数注文番号にまたがる場合、シート書き込み前に1行に統合する。
         items_by_asin: dict[str, list[PurchaseManagementItem]] = defaultdict(list)
         for result in order_groups:
-            order_number = result.order_number or ""
+            # 注文成立していない（order_numberが取れていない）グループは記録対象から除外する。
+            if not result.order_number:
+                continue
+            order_number = result.order_number
             items = _to_purchase_management_items_by_asin(result.order_group, order_number=order_number)
             for item in items:
                 items_by_asin[item.asin].append(item)

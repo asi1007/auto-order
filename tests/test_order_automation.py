@@ -132,7 +132,9 @@ class TestOrderAutomation:
         assert OrderAutomation._extract_store_name("https://detail.1688.com/offer/123") == "detail.1688.com"
         assert OrderAutomation._extract_store_name("https://www.example.com/product") == "example.com"
         assert OrderAutomation._extract_store_name("") == "不明"
-        assert OrderAutomation._extract_store_name("invalid-url") == "不明"
+        # http(s):// で始まらない値は店舗名直書きとして扱い、文字列をそのまま返す
+        assert OrderAutomation._extract_store_name("星球彩印") == "星球彩印"
+        assert OrderAutomation._extract_store_name("invalid-url") == "invalid-url"
 
     @patch("infrastructure.order_automation.sync_playwright")
     def test_process_orders_empty_list(self, mock_playwright, automation):
