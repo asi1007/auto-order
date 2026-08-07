@@ -27,6 +27,10 @@ cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/
 
 必要なログは完了後に `grep -E "ご注文番号|残高|✗|エラー|グループ処理中" /tmp/order_packing_*.log` などで抽出する。
 
+## 実行後の記録【必須・省略厳禁】
+
+ユーザーへの報告で終わらせず、同じターン内で Obsidian daily note（`obsidian/main/daily/YYYY-MM-DD.md` の「## Claude Code ログ」配下）へ追記する。記載項目は `/order` の「3. Obsidian daily note へ記録」を参照。「発注数が0より大きい行なし＝対象なし」で終了した場合も、その事実を記録する。
+
 ## 注意事項
 
 - Playwright Chromiumが必要（`playwright install chromium`）
