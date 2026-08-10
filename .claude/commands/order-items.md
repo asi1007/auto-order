@@ -19,6 +19,14 @@ GoogleシートからASINベースで発注数を集計し、Playwrightでイー
 - 出力を絞る用途で `| tail -N` `| head -N` を使わない → 出力ファイルが空に見えて再起動を誘発する。代わりに `> /tmp/order_items_$(date +%Y%m%d_%H%M%S).log 2>&1` でリダイレクトし、完了後に `grep` で抽出
 - 「動いてないように見える」ときは、まず `ps aux | grep order_items` で存在確認する。**動いている限り再起動禁止**
 
+## 0. 残高確認【必ず最初に実行】
+
+```bash
+cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/python check_balance.py
+```
+
+終了コード 1（残高不足）なら**発注を実行せず**、不足額をユーザーに報告して指示を仰ぐ。残高不足のまま走らせると後半グループが失敗して部分発注になる。推奨残高は商品代金の 1.2 倍（送料・手数料が上乗せされるため）。詳細は `/order` の「0. 残高確認」参照。
+
 ## 実行
 
 ```bash
@@ -29,7 +37,7 @@ cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/
 
 ## 実行後の記録【必須・省略厳禁】
 
-ユーザーへの報告で終わらせず、同じターン内で Obsidian daily note（`obsidian/main/daily/YYYY-MM-DD.md` の「## Claude Code ログ」配下）へ追記する。記載項目は `/order` の「3. Obsidian daily note へ記録」を参照。対象0件の場合も「対象なし」として記録する。
+ユーザーへの報告で終わらせず、同じターン内で Obsidian daily note（`obsidian/main/daily/YYYY-MM-DD.md` の「## Claude Code ログ」配下）へ **1セッション1行**で追記する。形式・記載項目は `/order` の「3. Obsidian daily note へ記録」を参照。対象0件や残高不足で見送った場合もその事実を記録する。
 
 ## 処理概要
 

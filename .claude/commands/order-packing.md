@@ -29,7 +29,7 @@ cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/
 
 ## 実行後の記録【必須・省略厳禁】
 
-ユーザーへの報告で終わらせず、同じターン内で Obsidian daily note（`obsidian/main/daily/YYYY-MM-DD.md` の「## Claude Code ログ」配下）へ追記する。記載項目は `/order` の「3. Obsidian daily note へ記録」を参照。「発注数が0より大きい行なし＝対象なし」で終了した場合も、その事実を記録する。
+ユーザーへの報告で終わらせず、同じターン内で Obsidian daily note（`obsidian/main/daily/YYYY-MM-DD.md` の「## Claude Code ログ」配下）へ **1セッション1行**で追記する。形式・記載項目は `/order` の「3. Obsidian daily note へ記録」を参照。「発注数が0より大きい行なし＝対象なし」で終了した場合も、その事実を記録する。
 
 ## 注意事項
 

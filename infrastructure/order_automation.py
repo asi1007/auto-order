@@ -9,6 +9,7 @@ import os
 
 from domain.entities.order_group import OrderGroup
 from domain.entities.order import Order
+from domain.value_objects.balance import Balance
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page, Locator
@@ -130,23 +131,22 @@ class OrderAutomation:
         cleaned = re.sub(r"[^\d]", "", text)
         return int(cleaned) if cleaned else 0
 
+    def fetch_balance(self) -> Balance:
+        self._goto_with_retry(f"{BASE_URL}/home")
+        time.sleep(2)
+
+        cny_locator = self.page.locator("text=/CNY.*元/")
+        jpy_locator = self.page.locator("text=/JPY.*円/")
+
+        cny_text = cny_locator.first.text_content().strip() if cny_locator.count() > 0 else ""
+        jpy_text = jpy_locator.first.text_content().strip() if jpy_locator.count() > 0 else ""
+
+        return Balance.from_texts(cny_text, jpy_text)
+
     def _log_balance(self, label: str = "発注後") -> None:
         try:
-            self._goto_with_retry(f"{BASE_URL}/home")
-            time.sleep(2)
-
-            cny_locator = self.page.locator("text=/CNY.*元/")
-            jpy_locator = self.page.locator("text=/JPY.*円/")
-
-            cny_text = cny_locator.first.text_content().strip() if cny_locator.count() > 0 else "取得不可"
-            jpy_text = jpy_locator.first.text_content().strip() if jpy_locator.count() > 0 else "取得不可"
-
-            cny_match = re.search(r"CNY\s*([\d,.]+)", cny_text)
-            jpy_match = re.search(r"JPY\s*([\d,.]+)", jpy_text)
-            cny_balance = cny_match.group(1) if cny_match else cny_text
-            jpy_balance = jpy_match.group(1) if jpy_match else jpy_text
-
-            self.logger.info("💰 %s残高: CNY %s 元 / JPY %s 円", label, cny_balance, jpy_balance)
+            balance = self.fetch_balance()
+            self.logger.info("💰 %s残高: CNY %s 元 / JPY %s 円", label, f"{balance.cny:,.2f}", f"{balance.jpy:,.0f}")
         except Exception as e:
             self.logger.warning("残高取得に失敗しました: %s", e)
 

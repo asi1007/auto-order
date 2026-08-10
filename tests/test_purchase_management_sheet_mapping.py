@@ -293,9 +293,12 @@ def test_purchase_management_sheet_repository_expands_basic_filter_range_to_new_
 
     repo.append(item)
 
-    mock_spreadsheet.batch_update.assert_called_once()
-    body = mock_spreadsheet.batch_update.call_args[0][0]
-    requests = body["requests"]
+    requests = [
+        request
+        for call in mock_spreadsheet.batch_update.call_args_list
+        for request in call[0][0]["requests"]
+    ]
+    assert any("clearBasicFilter" in request for request in requests)
     set_basic = [r["setBasicFilter"]["filter"] for r in requests if "setBasicFilter" in r]
     assert len(set_basic) == 1
     # endRowIndexは0-based exclusiveなので、row 7(1-based)を含めるには8が必要

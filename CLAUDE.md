@@ -9,6 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## コマンド
 
 ```bash
+# 残高確認（発注前に必ず実行。終了コード1=残高不足）
+python check_balance.py
+
 # 商品発注
 python order_items.py
 
@@ -33,7 +36,13 @@ pip install -r requirements.txt
 
 ## アーキテクチャ
 
-DDD（ドメイン駆動設計）に基づく3層構造。エントリポイントは `order_items.py`（商品）と `order_packing_materials.py`（梱包材）の2つ。
+DDD（ドメイン駆動設計）に基づく3層構造。エントリポイントは `order_items.py`（商品）、`order_packing_materials.py`（梱包材）、`check_balance.py`（発注前の残高確認）の3つ。
+
+### 残高不足で発注してはならない
+
+残高不足のまま `order_items.py` を走らせると、後半のグループが途中で失敗して**部分発注**になる。発注前に必ず `check_balance.py` を実行する。
+
+**推奨残高は商品代金の 1.2 倍**（`SAFETY_MARGIN_RATE`）。実際の引き落としには送料・手数料が上乗せされるため、商品代金ちょうどでは足りない。2026-08-10 の発注では商品代金 13,380 元に対し実際は 16,400 元が引かれた。
 
 ### レイヤー構成
 

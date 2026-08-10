@@ -97,8 +97,8 @@ class TestOrderAutomation:
 
         assert result is True
         assert automation.is_logged_in is True
-        mock_page.goto.assert_any_call(f"{BASE_URL}/login", timeout=30000)
-        mock_page.goto.assert_any_call(f"{BASE_URL}/manual", timeout=30000)
+        mock_page.goto.assert_any_call(f"{BASE_URL}/login", timeout=30000, wait_until="domcontentloaded")
+        mock_page.goto.assert_any_call(f"{BASE_URL}/manual", timeout=30000, wait_until="domcontentloaded")
         mock_page.fill.assert_any_call('input[type="text"]', "test@example.com")
         mock_page.fill.assert_any_call('input[type="password"]', "testpass")
         mock_page.click.assert_called_with('button:has-text("ログイン")')
