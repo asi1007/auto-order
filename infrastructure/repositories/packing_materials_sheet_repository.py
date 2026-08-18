@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from infrastructure.repositories.base_sheets_repository import BaseSheetsRepository
+from domain.value_objects.material_row import MaterialRow
 from domain.value_objects.packing_materials_sheet import PackingMaterialsSheet
 from gspread.utils import rowcol_to_a1
 
@@ -9,6 +10,60 @@ class SheetsPackingMaterialsSheetRepository(BaseSheetsRepository):
     def read(self, sheet_url: str, sheet_name: str = "使用資材") -> PackingMaterialsSheet:
         worksheet = self.open_worksheet(sheet_url, sheet_name)
         return PackingMaterialsSheet.from_values(worksheet.get_all_values())
+
+    def read_material_rows(self, sheet_url: str, sheet_name: str = "使用資材") -> list[MaterialRow]:
+        worksheet = self.open_worksheet(sheet_url, sheet_name)
+        data = worksheet.get_all_values()
+        header_idx = self._find_header_row_index(data)
+        idx_name = self._find_column_index(data[header_idx], "資材名称")
+        idx_detail = self._find_column_index(data[header_idx], "詳細")
+        idx_lot = self._find_column_index(data[header_idx], "ロットサイズ")
+
+        rows: list[MaterialRow] = []
+        for row_num_1based, row in enumerate(data[header_idx + 1 :], start=header_idx + 2):
+            name = str(row[idx_name]).strip() if idx_name < len(row) else ""
+            if not name:
+                continue
+            detail = str(row[idx_detail]).strip() if idx_detail < len(row) else ""
+            rows.append(
+                MaterialRow(
+                    row_number=row_num_1based,
+                    name=name,
+                    detail=detail,
+                    lot_size=self._to_lot_size(row[idx_lot] if idx_lot < len(row) else ""),
+                )
+            )
+        return rows
+
+    def set_order_quantities(
+        self, sheet_url: str, quantity_by_row: dict[int, int], sheet_name: str = "使用資材"
+    ) -> int:
+        if not quantity_by_row:
+            return 0
+
+        worksheet = self.open_worksheet(sheet_url, sheet_name)
+        data = worksheet.get_all_values()
+        header_idx = self._find_header_row_index(data)
+        _, idx_qty = self._find_name_and_qty_column_indices(data[header_idx])
+
+        for row_num in sorted(quantity_by_row):
+            cell = rowcol_to_a1(row_num, idx_qty + 1)
+            worksheet.update(cell, [[quantity_by_row[row_num]]], value_input_option="USER_ENTERED")
+        return len(quantity_by_row)
+
+    @staticmethod
+    def _to_lot_size(value: str) -> int:
+        text = str(value).strip().replace(",", "")
+        if not text:
+            return 1
+        return max(int(float(text)), 1)
+
+    @staticmethod
+    def _find_column_index(header_row: list[str], column_name: str) -> int:
+        for i, col in enumerate(header_row):
+            if str(col).strip() == column_name:
+                return i
+        raise Exception(f"列が見つかりません: {column_name}")
 
     @staticmethod
     def _find_header_row_index(data: list[list[str]]) -> int:

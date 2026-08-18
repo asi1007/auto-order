@@ -10,6 +10,31 @@ class SheetsPurchaseHistoryRepository(BaseSheetsRepository):
         self.sheet_url = sheet_url
         self.sheet_name = sheet_name
 
+    def latest_quantity_by_material(self) -> dict[str, int]:
+        worksheet = self.open_worksheet(self.sheet_url, self.sheet_name)
+        data = worksheet.get_all_values()
+        if len(data) < 2:
+            return {}
+
+        headers = [str(h).strip() for h in data[1]]
+        idx_name = headers.index("発注資材名称")
+        idx_order_number = headers.index("注文番号")
+        idx_quantity = headers.index("個数")
+
+        # 注文日は「9/17」「2026-07-29」が混在していて日付順に並べられない。
+        # ログは発注のたびに末尾へ追記されるため、行の並び順を新しさとして扱う。
+        latest: dict[str, int] = {}
+        for row in data[2:]:
+            if len(row) <= max(idx_name, idx_order_number, idx_quantity):
+                continue
+            name = str(row[idx_name]).strip()
+            order_number = str(row[idx_order_number]).strip()
+            quantity = str(row[idx_quantity]).strip()
+            if not name or not order_number or not quantity:
+                continue
+            latest[name] = int(float(quantity))
+        return latest
+
     def append(self, item: PurchaseHistoryItem) -> None:
         worksheet = self.open_worksheet(self.sheet_url, self.sheet_name)
         data = worksheet.get_all_values()

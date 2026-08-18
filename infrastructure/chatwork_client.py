@@ -33,6 +33,24 @@ class ChatworkClient:
         return cls(api_token=api_token, default_room_id=room_id,
                    google_credentials_file=google_credentials_file)
 
+    def fetch_messages(self, room_id: str) -> list[dict]:
+        if not self.api_token:
+            logger.warning("Chatwork APIトークンが設定されていません")
+            return []
+
+        url = f"{self.base_url}/rooms/{room_id}/messages"
+        headers = {"X-ChatWorkToken": self.api_token}
+
+        try:
+            response = requests.get(url, headers=headers, params={"force": 1}, timeout=10)
+            if response.status_code == 204:
+                return []
+            response.raise_for_status()
+            return list(response.json())
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Chatworkのメッセージ取得に失敗しました: {e}")
+            return []
+
     def post_message(self, room_id: str, message: str) -> bool:
         if not self.api_token:
             logger.warning("Chatwork APIトークンが設定されていません")

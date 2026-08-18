@@ -15,7 +15,55 @@ alwaysApply: false
 
 ## 手順
 
-### 0. 残高確認【必ず最初に実行】
+### 0. Chatwork の資材発注依頼を取り込む【残高確認より前】
+
+倉庫（徐雪蘭さん）から Chatwork ルーム `397092794` に届く「〜が在庫不足ので、再注文してお願いいたします」を拾い、
+`使用資材` シートの「発注数」列（Q列）へ数量を書き込む。ここを埋めてからでないと Step 2 の梱包材発注が動かない。
+
+```bash
+.venv/bin/python ingest_material_requests.py
+```
+
+書き込みはせず、取り込む内容だけを表示する。出力は2つに分かれる。
+
+| 見出し | 意味 | 対応 |
+|---|---|---|
+| 発注数を書き込む資材 | 資材を一意に特定でき、過去の発注実績から数量も決まったもの | 内容をユーザーに提示して承認を得る |
+| 保留・要確認 | 自動で決められなかったもの | 理由ごとに下表の対応をする |
+
+**必ずユーザーに提示して承認を得てから** `--apply` を付けて実行する。勝手に書き込まない。
+
+```bash
+cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/python ingest_material_requests.py --apply
+```
+
+保留の理由と対応:
+
+| 理由 | 何が起きているか | 対応 |
+|---|---|---|
+| サイズ表記なし | 依頼文に寸法が無い（画像だけで指示されている等） | Chatwork の該当メッセージと画像をユーザーに見せ、資材と数量を聞く |
+| 候補なし | どの資材の「詳細」列とも寸法が一致しない | 資材が未登録か、寸法の書き方が違う。ユーザーに確認する |
+| 候補が複数 | 同じ寸法の資材が複数ある（例: OPP袋8 と OPP袋11 はどちらも 32*40） | どちらかをユーザーに聞く |
+| 発注実績なし | 発注ログ（Z〜AD列）にその資材の過去発注が無い | 数量をユーザーに聞く |
+
+保留になった依頼は**処理済みとして記録しない**ので、次回の実行でまた出てくる。取りこぼさない。
+
+**導入時・state を作り直したときだけ**、既に人手で発注済みの過去分を消化する。
+書き込みはせず、処理済みの記録だけを付ける。
+
+```bash
+.venv/bin/python ingest_material_requests.py --seed-before 2026-08-17  # その日より前の依頼だけ
+.venv/bin/python ingest_material_requests.py --seed                    # 検出済みを全て
+```
+
+**まず `--seed-before` を検討する。** `--seed` は未対応の依頼まで消化してしまう。
+Chatwork で「発注しました」と返信済みかを確認し、未対応の依頼が残る日を境にする。
+2026-08-18 の導入時は `--seed-before 2026-08-17` で 4件を消化し、未対応の 08/17 の OPP袋依頼だけを残した。
+
+処理済みの記録は `.material_request_state.json`（git 管理外）。**このファイルを消すと過去の依頼を再度発注しかねない**ので消さない。
+
+### 1. 残高確認【発注前に必ず実行】
+
 
 発注を始める前に、残高が足りているかを必ず確認する。残高不足のまま発注すると、後半のグループが途中で失敗して**部分発注**になり、どこまで通ったかを注文履歴から追う羽目になる。
 
@@ -29,14 +77,14 @@ cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/
 
 | 終了コード | 意味 | 対応 |
 |---|---|---|
-| 0 | 残高が足りている（または発注対象なし） | ステップ1へ進む |
+| 0 | 残高が足りている（または発注対象なし） | ステップ2へ進む |
 | 1 | **残高不足** | 発注を実行しない。不足額をユーザーに報告して指示を仰ぐ |
 
 **推奨残高は商品代金の 1.2 倍**。実際の引き落としは商品代金だけでなく送料・手数料が上乗せされるため。2026-08-10 の発注では商品代金 13,380 元に対し実際は 16,400 元（+3,020 元 / 約1.23倍）が引かれた。商品代金ちょうどの残高では足りない。
 
 JPY 残高がある場合、`order_items.py` が発注前に全額を人民元へ自動両替する。`check_balance.py` は両替前の CNY のみで判定するため、JPY があるのに「残高不足」と出た場合は両替後の額で足りるかを換算して判断する。
 
-### 1. 商品発注
+### 2. 商品発注
 
 ```bash
 cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/python order_items.py
@@ -44,7 +92,7 @@ cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/
 
 結果をユーザーに報告する。
 
-### 2. 梱包材発注
+### 3. 梱包材発注
 
 ```bash
 cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/python order_packing_materials.py
@@ -52,9 +100,9 @@ cd /Users/wadaatsushi/Documents/automation/procurements/auto-order && .venv/bin/
 
 結果をユーザーに報告する。
 
-### 3. Obsidian daily note へ記録【必須・省略厳禁】
+### 4. Obsidian daily note へ記録【必須・省略厳禁】
 
-**ユーザーへの報告で終わらせない。** 発注は実行系タスクであり、いつ何をいくつ発注したかの記録が残らないと後追いができない。ステップ1・2の結果報告と同じターンの中で、必ず daily note へ追記する。
+**ユーザーへの報告で終わらせない。** 発注は実行系タスクであり、いつ何をいくつ発注したかの記録が残らないと後追いができない。ステップ2・3の結果報告と同じターンの中で、必ず daily note へ追記する。
 
 - 追記先: `obsidian/main/daily/YYYY-MM-DD.md` の「## Claude Code ログ」セクション配下（なければ末尾に作成）
 - **1セッション1行**。形式は `- **HH:MM** 📦 <50〜70字>`。金額・件数は太字
