@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from playwright.sync_api import Page, Locator
 
 BASE_URL = "https://yp.buyer-central.com"
+LOGIN_FORM_TIMEOUT_MS = 60000
 
 
 def sync_playwright():  # pragma: no cover
@@ -95,6 +96,15 @@ class OrderAutomation:
                     raise
                 time.sleep(2)
 
+    def _fill_login_form(self) -> None:
+        # QuasarのSPAで描画が遅れると fill が即タイムアウトする。入力欄の出現を待ってから入れる
+        for selector, value in (
+            ('input[type="text"]', self.email),
+            ('input[type="password"]', self.password),
+        ):
+            self.page.wait_for_selector(selector, timeout=LOGIN_FORM_TIMEOUT_MS)
+            self.page.fill(selector, value)
+
     def login(self) -> bool:
         if not self.email or not self.password:
             raise Exception("ログイン情報が設定されていません")
@@ -105,8 +115,7 @@ class OrderAutomation:
             self.page = self.context.new_page()
             self._goto_with_retry(f"{BASE_URL}/login")
 
-            self.page.fill('input[type="text"]', self.email)
-            self.page.fill('input[type="password"]', self.password)
+            self._fill_login_form()
             self.page.click('button:has-text("ログイン")')
             self.page.wait_for_load_state("networkidle", timeout=30000)
             time.sleep(2)
