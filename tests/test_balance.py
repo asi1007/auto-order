@@ -47,6 +47,17 @@ class TestBalance:
         assert balance.cny == 0.0
         assert balance.jpy == 0.0
 
+    def test_from_texts_keeps_the_minus_sign(self):
+        balance = Balance.from_texts("利用可能残高： CNY -15778.77 元", "JPY 0 円")
+
+        assert balance.cny == pytest.approx(-15778.77)
+
+    def test_negative_balance_never_covers_an_order(self):
+        balance = Balance.from_texts("CNY -15,778.77 元", "JPY 0 円")
+
+        assert balance.covers(1.0) is False
+        assert balance.shortfall(12450.0) == pytest.approx(28228.77)
+
 
 class TestEstimateRequiredAmount:
 

@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_AMOUNT_PATTERN = re.compile(r"([\d,]+(?:\.\d+)?)")
+# 残高がマイナスのことがある（YPは未払いがあると "CNY -15778.77 元" と出す）。
+# 符号を落とすと残高不足を「発注可能」と誤判定する。
+_AMOUNT_PATTERN = re.compile(r"(-?[\d,]+(?:\.\d+)?)")
 
 
 def _parse_amount(text: str) -> float:
