@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 import time
@@ -32,6 +33,25 @@ SPEC_CONFIRM_LABEL = "確認"
 SPEC_CANCEL_LABEL = "キャンセル"
 
 
+@dataclass(frozen=True)
+class SpecQuestion:
+    asin: str
+    desired: str
+    candidates: List[str]
+
+
+class SpecMatchRequiredError(Exception):
+    # 規格を一意に決められないときに送出する。
+    # テキストのまま発注すると YP 側で「手動注文」のままになり、倉庫が買付できない。
+    def __init__(self, question: SpecQuestion) -> None:
+        self.asin = question.asin
+        self.desired = question.desired
+        self.candidates = question.candidates
+        super().__init__(
+            f"規格を特定できません（ASIN={question.asin} 指定={question.desired!r} 候補={question.candidates}）"
+        )
+
+
 def sync_playwright():  # pragma: no cover
     from playwright.sync_api import sync_playwright as _sync_playwright
 
@@ -56,6 +76,7 @@ class OrderAutomation:
         self.context = None
         self.page: Optional[Page] = None
         self.is_logged_in = False
+        self.pending_spec_questions: List[SpecQuestion] = []
         self.logger = logging.getLogger(__name__)
         if not self.email or not self.password:
             self.logger.error("エラー: ログイン情報が設定されていません")
@@ -208,7 +229,7 @@ class OrderAutomation:
         except Exception as e:
             self.logger.warning("仕様ダイアログを閉じられませんでした: %s", e)
 
-    def match_spec(self, page: "Page", idx: int, desired_spec: str) -> bool:
+    def match_spec(self, page: "Page", idx: int, desired_spec: str, asin: str = "") -> bool:
         if not self.click_match(page, MATCH_LABEL_SPEC, idx):
             return False
 
@@ -216,20 +237,25 @@ class OrderAutomation:
         try:
             options.first.wait_for(state="visible", timeout=MATCH_WAIT_MS)
         except Exception:
-            self.logger.warning("規格の候補が出ませんでした（商品%s）。テキストのまま進めます", idx + 1)
+            self.logger.warning("規格の候補が出ませんでした（商品%s）。紐付けずに進めます", idx + 1)
             self._cancel_spec_dialog(page)
             return False
 
         labels = [(options.nth(i).text_content() or "").strip() for i in range(options.count())]
         target = self._choose_spec_index(labels, desired_spec)
         if target is None:
-            self.logger.warning(
-                "仕様「%s」に一致する規格がありません（候補: %s）。テキストのまま進めます",
+            # テキストのまま出すと YP 側で「手動注文」のままになり倉庫が買付できない。
+            # 勝手に選ぶと違う色・サイズが届くので、発注せずユーザーに聞く。
+            self._cancel_spec_dialog(page)
+            question = SpecQuestion(asin=asin, desired=(desired_spec or "").strip(), candidates=labels)
+            self.pending_spec_questions.append(question)
+            self.logger.error(
+                "規格を特定できないため発注を止めます（ASIN=%s 指定=%r 候補=%s）",
+                asin,
                 desired_spec,
                 labels,
             )
-            self._cancel_spec_dialog(page)
-            return False
+            raise SpecMatchRequiredError(question)
 
         options.nth(target).click()
         time.sleep(1)
@@ -442,7 +468,7 @@ class OrderAutomation:
         if idx == 0:
             self.click_match(page, MATCH_LABEL_STORE, 0)
         self.click_match(page, MATCH_LABEL_PRODUCT, idx)
-        if self.match_spec(page, idx, order_info.color_size_spec or ""):
+        if self.match_spec(page, idx, order_info.color_size_spec or "", asin=order_info.asin):
             self._restore_unit_price(page, idx, order_info)
 
     def _restore_unit_price(self, page: "Page", idx: int, order_info: Order) -> None:
@@ -806,6 +832,15 @@ class OrderAutomation:
             self.logger.info(f"[{i}/{len(order_groups)}] グループ処理中...")
             try:
                 order_number = self.fill_order_form(order_group)
+            except SpecMatchRequiredError as e:
+                self.logger.error("規格が決まらないため、ここで発注を中断します: %s", e)
+                results.append(OrderGroup(order_group=order_group, order_number=None, error=str(e)))
+                remaining = order_groups[i:]
+                if remaining:
+                    self.logger.error("未処理のまま残したグループ: %s件", len(remaining))
+                    for rest in remaining:
+                        results.append(OrderGroup(order_group=rest, order_number=None, error="規格の確認待ちで未処理"))
+                break
             except Exception as e:
                 self.logger.warning(f"注文グループの処理をスキップします: {e}")
                 results.append(OrderGroup(order_group=order_group, order_number=None, error=str(e)))

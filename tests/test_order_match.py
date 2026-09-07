@@ -10,6 +10,7 @@ from infrastructure.order_automation import (
     MATCH_LABEL_STORE,
     SPEC_OPTION_SELECTOR,
     OrderAutomation,
+    SpecMatchRequiredError,
 )
 
 
@@ -134,12 +135,26 @@ class TestMatchSpec:
             assert automation.match_spec(page, 0, "") is True
         assert any("確認" in sel for sel in page.clicked_labels())
 
-    def test_一致しなければキャンセルして進む(self, automation: OrderAutomation) -> None:
+    def test_一致しなければ発注せず質問のために止める(self, automation: OrderAutomation) -> None:
         page = _page(options=["赤 M", "赤 L"])
         with patch("infrastructure.order_automation.time.sleep"):
-            assert automation.match_spec(page, 0, "青 S") is False
+            with pytest.raises(SpecMatchRequiredError) as excinfo:
+                automation.match_spec(page, 0, "青 S", asin="B0TEST12345")
+
+        assert excinfo.value.asin == "B0TEST12345"
+        assert excinfo.value.desired == "青 S"
+        assert excinfo.value.candidates == ["赤 M", "赤 L"]
         assert any("キャンセル" in sel for sel in page.clicked_labels())
         assert not any("確認" in sel for sel in page.clicked_labels())
+
+    def test_止めた規格は質問として記録される(self, automation: OrderAutomation) -> None:
+        page = _page(options=["赤 M", "赤 L"])
+        with patch("infrastructure.order_automation.time.sleep"):
+            with pytest.raises(SpecMatchRequiredError):
+                automation.match_spec(page, 0, "青 S", asin="B0TEST12345")
+
+        assert len(automation.pending_spec_questions) == 1
+        assert automation.pending_spec_questions[0].asin == "B0TEST12345"
 
     def test_仕様マッチが出ていなければ何もしない(self, automation: OrderAutomation) -> None:
         page = _page(spec=0)

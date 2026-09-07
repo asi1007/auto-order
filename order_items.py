@@ -14,6 +14,20 @@ from infrastructure.repositories import BaseSheetsRepository, SheetsSalesSheetRe
 logger = logging.getLogger(__name__)
 
 
+def _report_spec_questions(automation: OrderAutomation) -> None:
+    if not automation.pending_spec_questions:
+        return
+    logger.error("=" * 60)
+    logger.error("規格を特定できず、発注を中断しました。どれを買うか教えてください。")
+    for question in automation.pending_spec_questions:
+        logger.error("  ASIN: %s", question.asin)
+        logger.error("  仕入情報シートの指定: %r", question.desired)
+        logger.error("  1688側の候補 %s件:", len(question.candidates))
+        for candidate in question.candidates:
+            logger.error("    - %s", candidate)
+    logger.error("=" * 60)
+
+
 def order_items():
     config = AppConfig.from_dotenv()
     automation = OrderAutomation.from_env(headless=config.headless)
@@ -45,6 +59,8 @@ def order_items():
             sales_repo.clear_order_quantities(config.sales_url, sorted(completed_asins))
 
         chatwork_client.send_notifications_for_order_groups(order_groups)
+
+        _report_spec_questions(automation)
 
     except NoOrderDataException:
         return
