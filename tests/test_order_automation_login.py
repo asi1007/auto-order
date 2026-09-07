@@ -30,6 +30,11 @@ class _LateRenderingPage:
     def wait_for_load_state(self, state: str, timeout: int | None = None) -> None:
         return None
 
+    def locator(self, selector: str):
+        no_match = Mock()
+        no_match.count.return_value = 0
+        return no_match
+
 
 @pytest.fixture
 def automation() -> OrderAutomation:

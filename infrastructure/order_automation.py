@@ -16,6 +16,20 @@ if TYPE_CHECKING:
 
 BASE_URL = "https://yp.buyer-central.com"
 LOGIN_FORM_TIMEOUT_MS = 60000
+ANNOUNCEMENT_BUTTON_LABEL = "既読にする"
+ANNOUNCEMENT_BUTTON_SELECTOR = f'div.q-dialog:visible button:has-text("{ANNOUNCEMENT_BUTTON_LABEL}")'
+MAX_ANNOUNCEMENT_DISMISSALS = 5
+
+# YP の手動注文フォームの「マッチ」は button ではなく div。
+# 押すと 1688 から店舗名・商品名・規格を引いてフォームへ同期する（倉庫からの依頼で 2026-09-04 に追加）。
+MATCH_LABEL_STORE = "店舗名マッチ"
+MATCH_LABEL_PRODUCT = "商品名マッチ"
+MATCH_LABEL_SPEC = "仕様マッチ"
+MATCH_WAIT_MS = 5000
+# 規格の候補行。行に click ハンドラが付いているのでラベルの span を押せば選択される。
+SPEC_OPTION_SELECTOR = "div.border-line.grid.cursor-pointer span.col-span-2"
+SPEC_CONFIRM_LABEL = "確認"
+SPEC_CANCEL_LABEL = "キャンセル"
 
 
 def sync_playwright():  # pragma: no cover
@@ -126,6 +140,7 @@ class OrderAutomation:
             if "/login" not in self.page.url:
                 self.logger.info("✓ ログインに成功しました")
                 self.is_logged_in = True
+                self.dismiss_mandatory_announcements()
                 return True
 
             self.logger.error("✗ ログインに失敗しました")
@@ -133,6 +148,95 @@ class OrderAutomation:
 
         except Exception as e:
             raise Exception(f"ログイン処理中にエラーが発生しました: {e}")
+
+    def dismiss_mandatory_announcements(self, page: Optional["Page"] = None) -> int:
+        target = page or self.page
+        dismissed = 0
+        for _ in range(MAX_ANNOUNCEMENT_DISMISSALS):
+            button = target.locator(ANNOUNCEMENT_BUTTON_SELECTOR)
+            if button.count() == 0:
+                break
+            button.first.click()
+            dismissed += 1
+            time.sleep(1)
+        if dismissed:
+            self.logger.info("必読お知らせを %s 件「%s」で閉じました", dismissed, ANNOUNCEMENT_BUTTON_LABEL)
+        return dismissed
+
+    def click_match(self, page: "Page", label: str, idx: int) -> bool:
+        locator = page.locator(f'div:text-is("{label}")').nth(idx)
+        try:
+            locator.wait_for(state="visible", timeout=MATCH_WAIT_MS)
+        except Exception:
+            self.logger.warning("「%s」が表示されないためスキップしました（商品%s）", label, idx + 1)
+            return False
+        locator.click()
+        time.sleep(1)
+        self.logger.info("    ✓ 「%s」を実行しました（商品%s）", label, idx + 1)
+        return True
+
+    @staticmethod
+    def _spec_segments(label: str) -> List[str]:
+        return [seg.strip() for seg in re.split(r"[-－/|]", label) if seg.strip()]
+
+    @staticmethod
+    def _choose_spec_index(labels: List[str], desired: str) -> Optional[int]:
+        if len(labels) == 1:
+            return 0
+        target = (desired or "").strip()
+        if not target:
+            return None
+
+        exact = [i for i, label in enumerate(labels) if label.strip() == target]
+        if len(exact) == 1:
+            return exact[0]
+
+        # 仕入情報シートは 1688 の規格名の一部だけを持つことが多い
+        # （例: シート「1号【白毛】」/ 1688「画刷-1号【白毛】-尼龙毛」）。
+        # 区切りで割った一区画との完全一致だけを許す。部分一致は 1号 が 11号 を巻き込むため使わない。
+        segmented = [
+            i for i, label in enumerate(labels) if target in OrderAutomation._spec_segments(label)
+        ]
+        if len(segmented) == 1:
+            return segmented[0]
+        return None
+
+    def _cancel_spec_dialog(self, page: "Page") -> None:
+        try:
+            page.locator(f'button:has-text("{SPEC_CANCEL_LABEL}")').last.click()
+            time.sleep(1)
+        except Exception as e:
+            self.logger.warning("仕様ダイアログを閉じられませんでした: %s", e)
+
+    def match_spec(self, page: "Page", idx: int, desired_spec: str) -> bool:
+        if not self.click_match(page, MATCH_LABEL_SPEC, idx):
+            return False
+
+        options = page.locator(SPEC_OPTION_SELECTOR)
+        try:
+            options.first.wait_for(state="visible", timeout=MATCH_WAIT_MS)
+        except Exception:
+            self.logger.warning("規格の候補が出ませんでした（商品%s）。テキストのまま進めます", idx + 1)
+            self._cancel_spec_dialog(page)
+            return False
+
+        labels = [(options.nth(i).text_content() or "").strip() for i in range(options.count())]
+        target = self._choose_spec_index(labels, desired_spec)
+        if target is None:
+            self.logger.warning(
+                "仕様「%s」に一致する規格がありません（候補: %s）。テキストのまま進めます",
+                desired_spec,
+                labels,
+            )
+            self._cancel_spec_dialog(page)
+            return False
+
+        options.nth(target).click()
+        time.sleep(1)
+        page.locator(f'button:has-text("{SPEC_CONFIRM_LABEL}")').last.click()
+        time.sleep(2)
+        self.logger.info("    ✓ 規格「%s」を紐付けました（商品%s）", labels[target], idx + 1)
+        return True
 
     def _parse_jpy_balance(self, text: str) -> int:
         if not text:
@@ -328,7 +432,39 @@ class OrderAutomation:
                     page, self.PLACEHOLDER_SPEC_NOTE, idx, order_info.color_size_spec, required=False
                 )
 
+            self._match_order_item(page, idx, order_info)
+
         self.logger.info(f"✓ {len(order_group)}商品の入力が完了しました")
+
+    def _match_order_item(self, page: "Page", idx: int, order_info: Order) -> None:
+        # 倉庫（買付担当）が 1688 の店舗・商品・規格を特定できるようにマッチさせる。
+        # 失敗しても発注は止めない。テキスト入力のまま提出される。
+        if idx == 0:
+            self.click_match(page, MATCH_LABEL_STORE, 0)
+        self.click_match(page, MATCH_LABEL_PRODUCT, idx)
+        if self.match_spec(page, idx, order_info.color_size_spec or ""):
+            self._restore_unit_price(page, idx, order_info)
+
+    def _restore_unit_price(self, page: "Page", idx: int, order_info: Order) -> None:
+        # 規格を紐付けると YP が 1688 の価格で単価を上書きする。
+        # 残高確認・仕入管理は仕入情報シートの単価で組んであるため、こちらへ戻す。
+        if not order_info.unit_price_for_form:
+            return
+        expected = str(order_info.unit_price_for_form)
+        actual = self._read_placeholder_nth(page, self.PLACEHOLDER_UNIT_PRICE, idx)
+        if actual and actual != expected:
+            self.logger.warning(
+                "規格紐付けで単価が %s 元 に変わりました（シートは %s 元）。シートの値に戻します",
+                actual,
+                expected,
+            )
+        self._fill_placeholder_nth(page, self.PLACEHOLDER_UNIT_PRICE, idx, expected)
+
+    def _read_placeholder_nth(self, page: "Page", placeholder: str, idx: int) -> str:
+        try:
+            return page.locator(f'input[placeholder="{placeholder}"]').nth(idx).input_value().strip()
+        except Exception:
+            return ""
 
     def _fill_placeholder_nth(
         self, page: Page, placeholder: str, idx: int, value: str, *, required: bool = True
