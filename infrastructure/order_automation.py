@@ -29,6 +29,14 @@ MATCH_LABEL_SPEC = "仕様マッチ"
 MATCH_WAIT_MS = 5000
 # 規格の候補行。行に click ハンドラが付いているのでラベルの span を押せば選択される。
 SPEC_OPTION_SELECTOR = "div.border-line.grid.cursor-pointer span.col-span-2"
+# 選択軸が2本ある商品の第1軸（款式）。丸みのあるボタンで、第2軸の grid 行とは別物。
+SPEC_GROUP_OPTION_SELECTOR = "div.cursor-pointer.whitespace-nowrap.rounded-1"
+# 「+商品」ボタン。削除アイコンと並んで商品バッジの *前* にある。
+# バッジの文字列は必須マークが付いて "* 商品1" なので前方一致では拾えない。
+ADD_PRODUCT_ROW_XPATH = (
+    'xpath=(//span[contains(@class, "bg-warning") and contains(normalize-space(.), "商品")]'
+    "/preceding-sibling::img[contains(@class, 'cursor-pointer')][1])[last()]"
+)
 SPEC_CONFIRM_LABEL = "確認"
 SPEC_CANCEL_LABEL = "キャンセル"
 
@@ -197,6 +205,12 @@ class OrderAutomation:
         return True
 
     @staticmethod
+    def _spec_axes(desired: Optional[str]) -> List[str]:
+        # 款式（内框尺寸）とサイズ（外框尺寸）のように選択軸が2本ある商品がある。
+        # 仕入情報シートは軸ごとに改行して持っているので、そのまま軸の並びとして使う。
+        return [line.strip() for line in (desired or "").splitlines() if line.strip()]
+
+    @staticmethod
     def _spec_segments(label: str) -> List[str]:
         return [seg.strip() for seg in re.split(r"[-－/|]", label) if seg.strip()]
 
@@ -240,6 +254,30 @@ class OrderAutomation:
             self.logger.warning("規格の候補が出ませんでした（商品%s）。紐付けずに進めます", idx + 1)
             self._cancel_spec_dialog(page)
             return False
+
+        axes = self._spec_axes(desired_spec)
+        groups = page.locator(SPEC_GROUP_OPTION_SELECTOR)
+        group_labels = [
+            (groups.nth(i).text_content() or "").strip() for i in range(groups.count())
+        ]
+        # 選択軸が2本ある商品（款式 × サイズ）。第1軸を先に押さないと第2軸だけでは決まらない
+        if group_labels and len(axes) >= 2:
+            group_target = self._choose_spec_index(group_labels, axes[0])
+            if group_target is None:
+                self._cancel_spec_dialog(page)
+                question = SpecQuestion(asin=asin, desired=axes[0], candidates=group_labels)
+                self.pending_spec_questions.append(question)
+                self.logger.error(
+                    "第1軸（款式）を特定できないため発注を止めます（ASIN=%s 指定=%r 候補=%s）",
+                    asin,
+                    axes[0],
+                    group_labels,
+                )
+                raise SpecMatchRequiredError(question)
+            groups.nth(group_target).click()
+            time.sleep(1)
+            self.logger.info("    ✓ 款式を選択: %s", group_labels[group_target])
+            desired_spec = axes[-1]
 
         labels = [(options.nth(i).text_content() or "").strip() for i in range(options.count())]
         target = self._choose_spec_index(labels, desired_spec)
@@ -521,17 +559,17 @@ class OrderAutomation:
     def _add_product_row(self, page: Page) -> None:
         """同一店舗グループに「+商品」ボタンで行を追加する。
 
-        新UI (2026-06 以降) の DOM 構造:
-          <img class="w-5 cursor-pointer" ...>   # 削除ボタン
-          <span class="bg-warning ...">商品1</span>  # ラベル（"商品" + 番号）
-          <img class="w-6 h-6 cursor-pointer" ...>   # ← ここが「+商品」ボタン
-        旧UIは text()="商品" だったが、新UIは "商品1" "商品2" のように番号付きになったため
-        starts-with で前方一致にする。last() で最新の商品ブロックの「+」を選ぶ。
+        DOM 構造（2026-09-10 に確認）:
+          <div class="flex items-center justify-end gap-2">
+            <img class="w-5 cursor-pointer">                      # 削除ボタン
+            <img class="w-5 cursor-pointer">                      # ← 「+商品」ボタン
+            <span class="bg-warning ..."><span>*</span> 商品1</span>  # ラベル
+          </div>
+        アイコンはラベルの **前** にある。以前は following-sibling を見ており、
+        さらに必須マークが付いて "* 商品1" になったため starts-with も外れていた。
+        last() で最新の商品ブロックの「+」を選ぶ。
         """
-        plus_btn = page.locator(
-            'xpath=(//span[contains(@class, "bg-warning") and starts-with(normalize-space(.), "商品")]'
-            "/following-sibling::img[contains(@class, 'cursor-pointer')])[last()]"
-        )
+        plus_btn = page.locator(ADD_PRODUCT_ROW_XPATH)
         plus_btn.wait_for(state="attached", timeout=10000)
         try:
             plus_btn.scroll_into_view_if_needed(timeout=3000)

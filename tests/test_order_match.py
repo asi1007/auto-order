@@ -161,3 +161,41 @@ class TestMatchSpec:
         with patch("infrastructure.order_automation.time.sleep"):
             assert automation.match_spec(page, 0, "") is False
         assert page.clicks == []
+
+
+class Test規格が2軸に分かれている場合:
+    """1688 の商品によっては款式（内框尺寸）とサイズ（外框尺寸）で選択軸が2本ある。
+
+    仕入情報シートは2行（款式\\nサイズ）で持っており、1行の文字列として
+    照合すると必ず外れる。2026-09-08 の A3アクリルフォトフレームで発注が止まった。
+    """
+
+    def test_改行で軸ごとに割る(self) -> None:
+        assert OrderAutomation._spec_axes("摆挂两用款-直角\nA3（ 内框 297*420mm )厚度3+3mm") == [
+            "摆挂两用款-直角",
+            "A3（ 内框 297*420mm )厚度3+3mm",
+        ]
+
+    def test_1軸なら1件のまま(self) -> None:
+        assert OrderAutomation._spec_axes("白色22*8cm硅藻泥垫") == ["白色22*8cm硅藻泥垫"]
+
+    def test_空白行は落とす(self) -> None:
+        assert OrderAutomation._spec_axes("摆挂两用款-直角\n\n  \nA3") == ["摆挂两用款-直角", "A3"]
+
+    def test_未指定は空になる(self) -> None:
+        assert OrderAutomation._spec_axes("") == []
+        assert OrderAutomation._spec_axes(None) == []
+
+    def test_軸ごとに完全一致で選べる(self) -> None:
+        groups = ["摆台款-直角", "挂墙款-直角", "摆挂两用款-直角"]
+        sizes = ["A4（ 内框 210*297mm )厚度3+3mm", "A3（ 内框 297*420mm )厚度3+3mm"]
+        axes = OrderAutomation._spec_axes("摆挂两用款-直角\nA3（ 内框 297*420mm )厚度3+3mm")
+        assert OrderAutomation._choose_spec_index(groups, axes[0]) == 2
+        assert OrderAutomation._choose_spec_index(sizes, axes[1]) == 1
+
+    def test_款式を取り違えない(self) -> None:
+        # 摆台款-直角 と 摆挂两用款-直角 は区切りで割ると「直角」が共通する。
+        # 完全一致が1件あるのでそちらが選ばれること
+        groups = ["摆台款-直角", "摆挂两用款-直角"]
+        assert OrderAutomation._choose_spec_index(groups, "摆挂两用款-直角") == 1
+        assert OrderAutomation._choose_spec_index(groups, "摆台款-直角") == 0
