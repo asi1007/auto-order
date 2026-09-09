@@ -29,8 +29,10 @@ MATCH_LABEL_SPEC = "仕様マッチ"
 MATCH_WAIT_MS = 5000
 # 規格の候補行。行に click ハンドラが付いているのでラベルの span を押せば選択される。
 SPEC_OPTION_SELECTOR = "div.border-line.grid.cursor-pointer span.col-span-2"
-# 選択軸が2本ある商品の第1軸（款式）。丸みのあるボタンで、第2軸の grid 行とは別物。
-SPEC_GROUP_OPTION_SELECTOR = "div.cursor-pointer.whitespace-nowrap.rounded-1"
+# 選択軸が2本ある商品の第1軸（款式）。丸みのあるチップで、第2軸の価格付き行とは別物。
+# 価格付き行も同じ角丸クラスを持つので :not(.grid) で外す。外さないと
+# 額縁で 29件（チップ24 + 価格行5）を拾い、指定が価格行と一致すると誤クリックしうる。
+SPEC_GROUP_OPTION_SELECTOR = "div.cursor-pointer.whitespace-nowrap.rounded-1:not(.grid)"
 # 「+商品」ボタン。削除アイコンと並んで商品バッジの *前* にある。
 # バッジの文字列は必須マークが付いて "* 商品1" なので前方一致では拾えない。
 ADD_PRODUCT_ROW_XPATH = (

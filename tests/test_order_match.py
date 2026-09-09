@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from infrastructure.order_automation import (
+    SPEC_GROUP_OPTION_SELECTOR,
     MATCH_LABEL_PRODUCT,
     MATCH_LABEL_SPEC,
     MATCH_LABEL_STORE,
@@ -46,9 +47,15 @@ class _FakeLocator:
 
 
 class _FakePage:
-    def __init__(self, matches: dict[str, int], spec_options: list[str]) -> None:
+    def __init__(
+        self,
+        matches: dict[str, int],
+        spec_options: list[str],
+        group_options: list[str] | None = None,
+    ) -> None:
         self._matches = matches
         self._spec_options = spec_options
+        self._group_options = group_options or []
         self.clicks: list[tuple[str, int]] = []
 
     def locator(self, selector: str) -> _FakeLocator:
@@ -57,6 +64,8 @@ class _FakePage:
     def count_of(self, selector: str) -> int:
         if selector == SPEC_OPTION_SELECTOR:
             return len(self._spec_options)
+        if selector == SPEC_GROUP_OPTION_SELECTOR:
+            return len(self._group_options)
         for label, count in self._matches.items():
             if label in selector:
                 return count
@@ -65,7 +74,16 @@ class _FakePage:
     def texts_of(self, selector: str) -> list[str]:
         if selector == SPEC_OPTION_SELECTOR:
             return self._spec_options
+        if selector == SPEC_GROUP_OPTION_SELECTOR:
+            return self._group_options
         return [""]
+
+    def picked_labels(self) -> list[str]:
+        return [
+            self.texts_of(sel)[i]
+            for sel, i in self.clicks
+            if sel in (SPEC_OPTION_SELECTOR, SPEC_GROUP_OPTION_SELECTOR)
+        ]
 
     def clicked_labels(self) -> list[str]:
         return [sel for sel, _ in self.clicks]
@@ -78,10 +96,17 @@ def automation() -> OrderAutomation:
     return instance
 
 
-def _page(store: int = 1, product: int = 1, spec: int = 1, options: list[str] | None = None) -> _FakePage:
+def _page(
+    store: int = 1,
+    product: int = 1,
+    spec: int = 1,
+    options: list[str] | None = None,
+    groups: list[str] | None = None,
+) -> _FakePage:
     return _FakePage(
         {MATCH_LABEL_STORE: store, MATCH_LABEL_PRODUCT: product, MATCH_LABEL_SPEC: spec},
         options if options is not None else ["9890"],
+        groups,
     )
 
 
@@ -199,3 +224,50 @@ class Test規格が2軸に分かれている場合:
         groups = ["摆台款-直角", "摆挂两用款-直角"]
         assert OrderAutomation._choose_spec_index(groups, "摆挂两用款-直角") == 1
         assert OrderAutomation._choose_spec_index(groups, "摆台款-直角") == 0
+
+
+class Test2軸のダイアログ操作:
+    """_spec_axes / _choose_spec_index の組み合わせではなく、実際に押す順序を見る。
+
+    第1軸（チップ）を押してから第2軸（価格付き行）を押し、最後に確認を押す。
+    どちらの軸で外れても、確認を押さずキャンセルして止める。
+    """
+
+    COLORS = ["黑色（不含卡纸）", "白色（不含卡纸）", "红木色（不含卡纸）"]
+    FRAMES = ["A4(可摆可挂)", "A4(挂墙)", "A3(挂墙)"]
+
+    def test_第1軸と第2軸を順に押して確認する(self, automation: OrderAutomation) -> None:
+        page = _page(options=self.COLORS, groups=self.FRAMES)
+        with patch("infrastructure.order_automation.time.sleep"):
+            assert automation.match_spec(page, 0, "A4(挂墙)\n黑色（不含卡纸）") is True
+
+        assert page.picked_labels() == ["A4(挂墙)", "黑色（不含卡纸）"]
+        assert any("確認" in sel for sel in page.clicked_labels())
+
+    def test_第1軸が一致しなければ第2軸に触れず止める(self, automation: OrderAutomation) -> None:
+        page = _page(options=self.COLORS, groups=self.FRAMES)
+        with patch("infrastructure.order_automation.time.sleep"):
+            with pytest.raises(SpecMatchRequiredError) as excinfo:
+                automation.match_spec(page, 0, "A2(挂墙)\n黑色（不含卡纸）", asin="B0TEST12345")
+
+        assert excinfo.value.desired == "A2(挂墙)"
+        assert excinfo.value.candidates == self.FRAMES
+        assert page.picked_labels() == []
+        assert not any("確認" in sel for sel in page.clicked_labels())
+
+    def test_第2軸が一致しなければ第1軸を押した後に止める(self, automation: OrderAutomation) -> None:
+        page = _page(options=self.COLORS, groups=self.FRAMES)
+        with patch("infrastructure.order_automation.time.sleep"):
+            with pytest.raises(SpecMatchRequiredError) as excinfo:
+                automation.match_spec(page, 0, "A4(挂墙)\n金色（不含卡纸）", asin="B0TEST12345")
+
+        assert excinfo.value.desired == "金色（不含卡纸）"
+        assert page.picked_labels() == ["A4(挂墙)"]
+        assert not any("確認" in sel for sel in page.clicked_labels())
+
+    def test_1行しか無ければ第1軸は押さない(self, automation: OrderAutomation) -> None:
+        page = _page(options=self.COLORS, groups=self.FRAMES)
+        with patch("infrastructure.order_automation.time.sleep"):
+            assert automation.match_spec(page, 0, "黑色（不含卡纸）") is True
+
+        assert page.picked_labels() == ["黑色（不含卡纸）"]
