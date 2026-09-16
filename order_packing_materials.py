@@ -37,6 +37,14 @@ def build_material_order_report(order_groups) -> str | None:
     )
 
 
+def send_material_attachments(results, chatwork_client) -> None:
+    # 説明書などの入稿データを倉庫へ渡す。発注が成立したものだけ送る。
+    groups = [result.order_group for result in results if result.order_number]
+    if not groups:
+        return
+    chatwork_client.send_notifications_for_order_groups(groups)
+
+
 def to_unit_price_per_piece(price: float | None, lot_size: int | None) -> float | None:
     # 使用資材シートの価格は「ロットサイズあたり」で入っている（ロット1なら1個あたり）
     if not price or price <= 0:
@@ -62,8 +70,8 @@ def convert_packing_materials_to_order_format(packing_materials_item) -> Order:
         order_quantity=int(packing_materials_item.order_quantity),
         lot_size=int(packing_materials_item.lot_size),
         unit_price=to_unit_price_per_piece(packing_materials_item.price, packing_materials_item.lot_size),
-        chatwork_message="",
-        chatwork_attachment="",
+        chatwork_message=str(getattr(packing_materials_item, "chatwork_message", "") or ""),
+        chatwork_attachment=str(getattr(packing_materials_item, "chatwork_attachment", "") or ""),
     )
 
 
@@ -172,6 +180,7 @@ def order_packing_materials():
         results = automation.process_orders(order_groups, on_group_done=_record_one)
 
         notify_material_order_to_warehouse(results)
+        send_material_attachments(results, ChatworkClient.from_env())
 
     except NoOrderDataException:
         return

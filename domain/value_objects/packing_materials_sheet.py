@@ -17,6 +17,9 @@ class PackingMaterialsItem:
     price: float
     order_quantity: int
     lot_size: int
+    # 説明書などの入稿データは Chatwork で倉庫へ渡す。列が無いシートでも動くよう任意扱い。
+    chatwork_message: str = ""
+    chatwork_attachment: str = ""
     
     def __post_init__(self):
         if not self.material_name or not self.material_name.strip():
@@ -51,7 +54,8 @@ class PackingMaterialsSheet:
     @classmethod
     def _create_item_from_row(cls, row: pd.Series, url_col: str, product_name_col: str, 
                               detail_col: str, price_col: str, order_quantity_col: str,
-                              material_name_col: str, lot_size_col: str) -> Optional[PackingMaterialsItem]:
+                              material_name_col: str, lot_size_col: str,
+                              chatwork_message_col: str = "", chatwork_attachment_col: str = "") -> Optional[PackingMaterialsItem]:
         raw_material_name = cls._normalize_cell_value(row.get(material_name_col, "")) if material_name_col else ""
         raw_url = cls._normalize_cell_value(row.get(url_col, "")) if url_col else ""
         raw_product_name = cls._normalize_cell_value(row.get(product_name_col, "")) if product_name_col else ""
@@ -76,6 +80,9 @@ class PackingMaterialsSheet:
         except (ValueError, TypeError):
             return None
         
+        chatwork_message = cls._optional_text(row, chatwork_message_col)
+        chatwork_attachment = cls._optional_text(row, chatwork_attachment_col)
+
         return PackingMaterialsItem(
             material_name=material_name,
             url=url,
@@ -84,7 +91,16 @@ class PackingMaterialsSheet:
             price=price,
             order_quantity=order_quantity
             ,lot_size=lot_size
+            ,chatwork_message=chatwork_message
+            ,chatwork_attachment=chatwork_attachment
         )
+
+    @classmethod
+    def _optional_text(cls, row, column: str) -> str:
+        if not column or column not in row:
+            return ""
+        raw = cls._normalize_cell_value(row.get(column, ""))
+        return "" if pd.isna(raw) else str(raw).strip()
     
     @classmethod
     def from_values(
@@ -114,7 +130,8 @@ class PackingMaterialsSheet:
         missing = [h for h in required_headers if h not in df.columns]
         assert not missing, f"必要なヘッダーが不足しています: {sorted(missing)}"
 
-        df_filtered = df[required_headers].copy()
+        optional_headers = [h for h in ("chatwork文章", "chatwork添付") if h in df.columns]
+        df_filtered = df[required_headers + optional_headers].copy()
 
         material_name_col = "資材名称"
         order_quantity_col = "発注数"
@@ -133,12 +150,15 @@ class PackingMaterialsSheet:
             order_quantity_col,
             material_name_col,
             lot_size_col,
+            "chatwork文章" if "chatwork文章" in optional_headers else "",
+            "chatwork添付" if "chatwork添付" in optional_headers else "",
         )
     
     @classmethod
     def from_dataframe(cls, df: pd.DataFrame, url_col: str, product_name_col: str, 
                        detail_col: str, price_col: str, order_quantity_col: str,
-                       material_name_col: str, lot_size_col: str) -> 'PackingMaterialsSheet':
+                       material_name_col: str, lot_size_col: str,
+                       chatwork_message_col: str = "", chatwork_attachment_col: str = "") -> 'PackingMaterialsSheet':
         items = []
         
         for _, row in df.iterrows():
@@ -151,6 +171,8 @@ class PackingMaterialsSheet:
                 order_quantity_col,
                 material_name_col,
                 lot_size_col,
+                chatwork_message_col,
+                chatwork_attachment_col,
             )
             if item:
                 items.append(item)
