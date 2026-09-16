@@ -51,10 +51,10 @@ def print_plan(plan: IngestPlan) -> None:
 
     if plan.orders:
         print(f"\n[発注数を書き込む資材] {len(plan.orders)}件")
-        print(f"  {'資材名称':<20}{'発注数':>8}{'個数':>10}  {'行':>4}  依頼")
+        print(f"  {'資材名称':<20}{'発注数(個)':>10}{'ロット数':>9}  {'行':>4}  依頼")
         for order in plan.orders:
             print(
-                f"  {order.material.name:<20}{order.quantity:>8}{order.piece_count:>10}  "
+                f"  {order.material.name:<20}{order.quantity:>10}{order.lot_count:>9}  "
                 f"{order.material.row_number:>4}  {order.size_token.text}"
             )
 

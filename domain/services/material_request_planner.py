@@ -8,7 +8,6 @@ _REASON_NO_SIZE = "サイズ表記なし"
 _REASON_NO_CANDIDATE = "候補なし"
 _REASON_AMBIGUOUS = "候補が複数"
 _REASON_NO_HISTORY = "発注実績なし"
-_REASON_INDIVISIBLE = "ロット数に割り切れない"
 
 
 class MaterialRequestPlanner:
@@ -61,14 +60,9 @@ class MaterialRequestPlanner:
             pendings.append(self._pending(request, size_token, (material,), _REASON_NO_HISTORY))
             return
 
-        # 「発注数」列はロット数。発注ログの個数は ロット数 × ロットサイズ で記録されている。
-        lot_size = material.lot_size or 1
-        if piece_count % lot_size != 0:
-            pendings.append(self._pending(request, size_token, (material,), _REASON_INDIVISIBLE))
-            return
-        quantity = piece_count // lot_size
-
-        orders.append(self._order(request, size_token, material, quantity))
+        # 「発注数」列(Q)は個数（枚数）。発注ログ(AC列)も個数で記録されている。
+        # ロット数に換算して書くと、ロットサイズ分の1の数量で発注されてしまう。
+        orders.append(self._order(request, size_token, material, piece_count))
 
     @staticmethod
     def _order(request, size_token, material, quantity: int) -> PlannedOrder:

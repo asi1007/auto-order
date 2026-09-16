@@ -119,7 +119,15 @@ _LOT_ROWS = [
 
 
 class TestMaterialRequestPlannerLotSize:
-    def test_発注数はロット数に換算して割り当てる(self) -> None:
+    """使用資材シートの「発注数」列(Q)は個数（枚数）であってロット数ではない。
+
+    `order_packing_materials.py` は 発注数 をそのままフォームの数量にし、単価を
+    「価格 ÷ ロットサイズ」で1個あたりに割る。ロット数を書くとロットサイズ分の1の
+    数量で発注されてしまう（アクリル説明書ならロット数3で3枚）。
+    発注ログ(AC列)も個数で記録されており、S列がそれをロット数に換算して表示している。
+    """
+
+    def test_発注数には実績の個数をそのまま使う(self) -> None:
         planner = MaterialRequestPlanner(
             matcher=MaterialMatcher(_LOT_ROWS),
             quantity_by_material={"A4プチプチ": 10000},
@@ -127,8 +135,8 @@ class TestMaterialRequestPlannerLotSize:
 
         plan = planner.plan([_request("30*35のプチプチ袋が在庫なくて、再注文してお願いいたします。")])
 
-        assert plan.orders[0].quantity == 100
-        assert plan.orders[0].piece_count == 10000
+        assert plan.orders[0].quantity == 10000
+        assert plan.orders[0].lot_count == 100
 
     def test_ロットサイズが1なら個数がそのまま発注数になる(self) -> None:
         planner = MaterialRequestPlanner(
@@ -139,8 +147,9 @@ class TestMaterialRequestPlannerLotSize:
         plan = planner.plan([_request("230*183*20mm ケースが在庫不足ので、再注文してお願いいたします。")])
 
         assert plan.orders[0].quantity == 3000
+        assert plan.orders[0].lot_count == 3000
 
-    def test_ロット数に割り切れない実績は保留する(self) -> None:
+    def test_ロット数で割り切れなくても個数で発注する(self) -> None:
         planner = MaterialRequestPlanner(
             matcher=MaterialMatcher(_LOT_ROWS),
             quantity_by_material={"半端ロット資材": 2500},
@@ -148,8 +157,8 @@ class TestMaterialRequestPlannerLotSize:
 
         plan = planner.plan([_request("11*22の袋が在庫不足ので、再注文してお願いいたします。")])
 
-        assert plan.orders == ()
-        assert plan.pendings[0].reason == "ロット数に割り切れない"
+        assert plan.pendings == ()
+        assert plan.orders[0].quantity == 2500
 
 
 class TestMaterialRequestPlannerOverrides:

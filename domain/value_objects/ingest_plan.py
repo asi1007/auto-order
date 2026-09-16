@@ -11,11 +11,14 @@ class PlannedOrder:
     request: MaterialRequest
     size_token: SizeToken
     material: MaterialRow
+    # 使用資材シートの「発注数」列(Q)に書く値。個数（枚数）であってロット数ではない。
     quantity: int
 
     @property
-    def piece_count(self) -> int:
-        return self.quantity * self.material.lot_size
+    def lot_count(self) -> float:
+        lot_size = self.material.lot_size or 1
+        count = self.quantity / lot_size
+        return int(count) if count.is_integer() else count
 
 
 @dataclass(frozen=True)
