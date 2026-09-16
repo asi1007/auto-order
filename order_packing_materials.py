@@ -4,9 +4,46 @@ from dotenv import load_dotenv
 from infrastructure.repositories.packing_materials_sheet_repository import SheetsPackingMaterialsSheetRepository
 from infrastructure import group_orders_by_url, OrderAutomation, NoOrderDataException, validate_config, record_purchase_history
 from domain.entities.order import Order
+from infrastructure.chatwork_client import ChatworkClient
 
 
 logger = logging.getLogger(__name__)
+
+UNIT_PRICE_DECIMALS = 4
+WAREHOUSE_ACCOUNT_ID = "986396"
+WAREHOUSE_ACCOUNT_NAME = "徐雪蘭"
+
+
+def build_material_order_report(order_groups) -> str | None:
+    lines = [
+        f"・{order.material_name or order.asin}（{order.order_quantity:,}個）{group.order_number}"
+        for group in order_groups
+        if group.order_number
+        for order in group.order_group
+    ]
+    if not lines:
+        return None
+
+    return "\n".join(
+        [
+            f"[To:{WAREHOUSE_ACCOUNT_ID}]{WAREHOUSE_ACCOUNT_NAME}さん",
+            "お世話になっております。",
+            "下記の資材を発注しました。",
+            "",
+            *lines,
+            "",
+            "ご確認のほどよろしくお願いいたします。",
+        ]
+    )
+
+
+def to_unit_price_per_piece(price: float | None, lot_size: int | None) -> float | None:
+    # 使用資材シートの価格は「ロットサイズあたり」で入っている（ロット1なら1個あたり）
+    if not price or price <= 0:
+        return None
+    if not lot_size or lot_size <= 1:
+        return float(price)
+    return round(float(price) / int(lot_size), UNIT_PRICE_DECIMALS)
 
 
 def convert_packing_materials_to_order_format(packing_materials_item) -> Order:
@@ -24,10 +61,24 @@ def convert_packing_materials_to_order_format(packing_materials_item) -> Order:
         color_size_spec=str(packing_materials_item.detail),
         order_quantity=int(packing_materials_item.order_quantity),
         lot_size=int(packing_materials_item.lot_size),
-        unit_price=float(packing_materials_item.price) if packing_materials_item.price and packing_materials_item.price > 0 else None,
+        unit_price=to_unit_price_per_piece(packing_materials_item.price, packing_materials_item.lot_size),
         chatwork_message="",
         chatwork_attachment="",
     )
+
+
+def notify_material_order_to_warehouse(order_groups) -> bool:
+    report = build_material_order_report(order_groups)
+    if not report:
+        return False
+
+    client = ChatworkClient.from_env()
+    sent = client.post_message(client.default_room_id, report)
+    if sent:
+        logger.info("✓ Chatworkへ資材発注を報告しました")
+    else:
+        logger.warning("Chatworkへの資材発注報告に失敗しました")
+    return sent
 
 
 def get_packing_materials_order_data(credentials_file: str, packing_materials_url: str, sheet_name: str = None) -> list[Order]:
@@ -94,30 +145,33 @@ def order_packing_materials():
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
         assert order_groups, "order_groupsは空であってはなりません"
 
-        results = automation.process_orders(order_groups)
-
-        record_purchase_history(
-            credentials_file,
-            purchase_history_url,
-            results,
-            purchase_history_sheet_name,
-        )
-
-        completed_material_names: set[str] = set()
-        for result in results:
+        # グループが成立するたびに記録する。まとめて行うと途中で落ちたときに
+        # 成立済みの注文が購入履歴に残らない（2026-09-16 に商品発注側で発生）
+        def _record_one(result) -> None:
             if not result.order_number:
-                continue
-            for order in result.order_group:
-                name = getattr(order, "material_name", "") or getattr(order, "asin", "")
-                if name:
-                    completed_material_names.add(str(name).strip())
-        if completed_material_names:
-            repo = SheetsPackingMaterialsSheetRepository(credentials_file)
-            repo.clear_order_quantities(
-                packing_materials_url,
-                sorted(completed_material_names),
-                sheet_name=packing_materials_sheet_name or "使用資材",
+                return
+            record_purchase_history(
+                credentials_file,
+                purchase_history_url,
+                [result],
+                purchase_history_sheet_name,
             )
+            names = sorted({
+                str(getattr(order, "material_name", "") or getattr(order, "asin", "")).strip()
+                for order in result.order_group
+                if getattr(order, "material_name", "") or getattr(order, "asin", "")
+            })
+            if names:
+                repo = SheetsPackingMaterialsSheetRepository(credentials_file)
+                repo.clear_order_quantities(
+                    packing_materials_url,
+                    names,
+                    sheet_name=packing_materials_sheet_name or "使用資材",
+                )
+
+        results = automation.process_orders(order_groups, on_group_done=_record_one)
+
+        notify_material_order_to_warehouse(results)
 
     except NoOrderDataException:
         return

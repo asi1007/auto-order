@@ -37,26 +37,30 @@ def order_items():
     try:
         order_list = get_order_data(config.credentials_file, config.sales_url, config.purchase_url)
         order_groups = group_orders_by_url(order_list, max_items_per_group=5)
-        results = automation.process_orders(order_groups)
 
-        record_purchase_management(
-            config.credentials_file,
-            config.purchase_management_sheet_url,
-            results,
-            config.purchase_management_sheet_name,
-        )
-
-        completed_asins: set[str] = set()
-        for result in results:
+        # グループが成立するたびに記録し、発注数も消す。
+        # 全部終わってからまとめて行うと、途中で落ちたときに成立済みの注文が
+        # 仕入管理シートに一切残らず、発注数も残るので二重発注の危険がある（2026-09-16）
+        def _record_one(result) -> None:
             if not result.order_number:
-                continue
-            for order in result.order_group:
-                if getattr(order, "asin", ""):
-                    completed_asins.add(str(order.asin).strip())
-        if completed_asins:
-            base = BaseSheetsRepository(config.credentials_file)
-            sales_repo = SheetsSalesSheetRepository(config.credentials_file, client=base.client)
-            sales_repo.clear_order_quantities(config.sales_url, sorted(completed_asins))
+                return
+            record_purchase_management(
+                config.credentials_file,
+                config.purchase_management_sheet_url,
+                [result],
+                config.purchase_management_sheet_name,
+            )
+            asins = sorted({
+                str(order.asin).strip()
+                for order in result.order_group
+                if getattr(order, "asin", "")
+            })
+            if asins:
+                base = BaseSheetsRepository(config.credentials_file)
+                sales_repo = SheetsSalesSheetRepository(config.credentials_file, client=base.client)
+                sales_repo.clear_order_quantities(config.sales_url, asins)
+
+        results = automation.process_orders(order_groups, on_group_done=_record_one)
 
         chatwork_client.send_notifications_for_order_groups(order_groups)
 

@@ -832,7 +832,13 @@ class OrderAutomation:
         self.clear_cart()
         return True
 
-    def process_orders(self, order_groups: List[List[Order]]) -> List[OrderGroup]:
+    def process_orders(
+        self,
+        order_groups: List[List[Order]],
+        on_group_done=None,
+    ) -> List[OrderGroup]:
+        # on_group_done: グループが1つ終わるたびに呼ぶ。全部終わってから記録すると、
+        # 途中で落ちたときに成立済みの注文が仕入管理シートに残らない（2026-09-16）
         if not order_groups:
             self.logger.info("処理する注文がありません")
             return []
@@ -901,7 +907,14 @@ class OrderAutomation:
                 )
             groups_since_refresh += 1
 
-            results.append(OrderGroup(order_group=order_group, order_number=order_number))
+            done = OrderGroup(order_group=order_group, order_number=order_number)
+            results.append(done)
+            if on_group_done is not None:
+                try:
+                    on_group_done(done)
+                except Exception as e:
+                    # 記録に失敗しても発注は続ける。記録漏れはログで追える
+                    self.logger.warning("グループ完了時の記録に失敗しました: %s", e)
             time.sleep(2)
 
         self.logger.info("すべての注文フォームへの入力が完了しました")

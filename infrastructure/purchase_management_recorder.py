@@ -6,12 +6,18 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from dataclasses import replace
 from datetime import datetime
 
 from domain.entities.order_group import OrderGroup
 from domain.entities.order import Order
 from domain.value_objects.purchase_management import PurchaseManagementItem
-from infrastructure.repositories import BaseSheetsRepository, SheetsPurchaseManagementRepository
+from domain.services.purchase_count import PurchaseRecord, next_purchase_count
+from infrastructure.repositories import (
+    BaseSheetsRepository,
+    SheetsPurchaseCountHistoryRepository,
+    SheetsPurchaseManagementRepository,
+)
 from infrastructure.exchange_rate_service import convert_cny_to_jpy
 
 
@@ -182,6 +188,46 @@ def _merge_same_asin_across_groups(items: list[PurchaseManagementItem]) -> Purch
     )
 
 
+def _load_purchase_history(
+    credentials_file: str,
+    management_sheet_url: str,
+    management_sheet_name: str | None,
+    client,
+) -> list[PurchaseRecord] | None:
+    try:
+        repository = SheetsPurchaseCountHistoryRepository(
+            credentials_file=credentials_file,
+            sheet_url=management_sheet_url,
+            management_sheet_name=management_sheet_name,
+            client=client,
+        )
+        return repository.load()
+    except Exception as e:
+        logger.warning("仕入回数の履歴を取得できませんでした（仕入回数は記録しません）: %s", e)
+        return None
+
+
+def _with_purchase_counts(
+    items: list[PurchaseManagementItem], history: list[PurchaseRecord] | None
+) -> list[PurchaseManagementItem]:
+    # 履歴が読めないまま 1 を入れると全行が「初回仕入」として赤くなるため、その場合は空欄のままにする。
+    if history is None:
+        return items
+
+    records = list(history)
+    counted: list[PurchaseManagementItem] = []
+    for item in items:
+        purchase_count = next_purchase_count(item.asin, item.purchase_date, records)
+        records.append(PurchaseRecord(asin=item.asin, purchase_date=item.purchase_date))
+        counted.append(replace(item, purchase_count=purchase_count))
+    return counted
+
+
+def recordable_groups(order_groups: list[OrderGroup]) -> list[OrderGroup]:
+    """注文番号が取れたグループだけを返す。成立していないものは記録しない。"""
+    return [group for group in order_groups if getattr(group, "order_number", None)]
+
+
 def record_purchase_management(
     credentials_file: str,
     management_sheet_url: str,
@@ -215,6 +261,13 @@ def record_purchase_management(
                 items_by_asin[item.asin].append(item)
 
         merged_items = [_merge_same_asin_across_groups(items) for items in items_by_asin.values()]
+        history = _load_purchase_history(
+            credentials_file=credentials_file,
+            management_sheet_url=management_sheet_url,
+            management_sheet_name=management_sheet_name,
+            client=base.client,
+        )
+        merged_items = _with_purchase_counts(merged_items, history)
 
         total_recorded = 0
         for item in merged_items:
