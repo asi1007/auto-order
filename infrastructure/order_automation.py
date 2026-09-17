@@ -41,6 +41,9 @@ ADD_PRODUCT_ROW_XPATH = (
 )
 SPEC_CONFIRM_LABEL = "確認"
 SPEC_CANCEL_LABEL = "キャンセル"
+# カートに入れただけでは選択されず「数量合計 0PCS」のまま決済が進まない商品がある。
+# input[type=checkbox] は Quasar が hidden にしているので押せない。親の div を押す。
+CART_SELECT_ALL_SELECTOR = "div.q-checkbox"
 
 
 @dataclass(frozen=True)
@@ -303,6 +306,27 @@ class OrderAutomation:
         time.sleep(2)
         self.logger.info("    ✓ 規格「%s」を紐付けました（商品%s）", labels[target], idx + 1)
         return True
+
+    def select_all_in_cart(self, page: "Page") -> bool:
+        boxes = page.locator(CART_SELECT_ALL_SELECTOR)
+        if boxes.count() == 0:
+            self.logger.warning("    カートの選択チェックボックスが見つかりません")
+            return False
+        for index in range(boxes.count()):
+            box = boxes.nth(index)
+            try:
+                if box.get_attribute("aria-checked") == "true":
+                    self.logger.info("    ✓ カートの商品は選択済みです")
+                    return True
+                box.click(timeout=5000)
+                time.sleep(1)
+                if box.get_attribute("aria-checked") == "true":
+                    self.logger.info("    ✓ カートの商品を選択しました")
+                    return True
+            except Exception as e:
+                self.logger.warning("    チェックボックス%sを押せませんでした: %s", index + 1, e)
+        self.logger.warning("    カートの商品を選択できませんでした")
+        return False
 
     def _parse_jpy_balance(self, text: str) -> int:
         if not text:
@@ -609,6 +633,8 @@ class OrderAutomation:
             page.wait_for_load_state("networkidle", timeout=30000)
             time.sleep(2)
             self.logger.info("    ✓ カートに追加しました（→ /goods/cart）")
+
+            self.select_all_in_cart(page)
 
             checkout_btn = page.locator('button:has-text("決済")').last
             checkout_btn.wait_for(state="visible", timeout=10000)
