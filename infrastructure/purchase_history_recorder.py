@@ -24,8 +24,9 @@ def convert_order_to_history_item(order: Order, *, order_number: Optional[str] =
     product_name = order.product_name
     url = order.purchase_url
     detail = order.color_size_spec
-    lot_size = int(order.lot_size or 1)
-    quantity = int(order.order_quantity) * int(lot_size)
+    # 使用資材シートの「発注数」は枚数。ロットサイズを掛けると発注ログが桁違いになり、
+    # 残数（P列）と最終発注数量（S列）が壊れる。
+    quantity = int(order.order_quantity)
     price = order.unit_price if order.unit_price is not None else 0.0
     
     assert product_name, "商品名は必須です"
